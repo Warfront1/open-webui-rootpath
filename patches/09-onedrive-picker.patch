@@ -1,0 +1,11 @@
+diff --git a/src/lib/utils/onedrive-file-picker.ts b/src/lib/utils/onedrive-file-picker.ts
+--- a/src/lib/utils/onedrive-file-picker.ts
++++ b/src/lib/utils/onedrive-file-picker.ts
+@@ -1,5 +1,6 @@
+ import type { PopupRequest, PublicClientApplication } from '@azure/msal-browser';
+ import { v4 as uuidv4 } from 'uuid';
++import { WEBUI_BASE_URL } from '$lib/constants';
+ 
+ @@ in getCredentials():
+-		const response = await fetch('/api/config', {
++		const response = await fetch(`${WEBUI_BASE_URL}/api/config`, {
