@@ -16,22 +16,31 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build Docker Container
-        run: |
-          TMPDIR=$(mktemp -d)
-          sudo ./scripts/apply.sh
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.0.0
+
+#      - name: Build Docker Container
+#        run: |
+#          TMPDIR=$(mktemp -d)
+#          sudo ./scripts/apply.sh
 
       - name: Log in to Docker Hub
         uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-        if: github.ref == 'refs/heads/main'
+#        if: github.ref == 'refs/heads/main'
 
       - name: Publish Docker Container
         shell: bash
         run: |
-          docker images
-          [ "${{ env.UPLOAD_LATEST }}" = false ] && docker rmi ${DOCKER_REPO}:latest
-          docker push ${DOCKER_REPO} --all-tags
-        if: github.ref == 'refs/heads/main'
+          UPSTREAM_VERSION=$(cat UPSTREAM_VERSION)
+          TAGS="-t ${DOCKER_REPO}:${UPSTREAM_VERSION}"
+          [ "${{ env.UPLOAD_LATEST }}" = "true" ] && TAGS="$TAGS -t ${DOCKER_REPO}:latest"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg UPSTREAM_VERSION="${UPSTREAM_VERSION}" \
+            $TAGS \
+            --push \
+            .
+#        if: github.ref == 'refs/heads/main'
