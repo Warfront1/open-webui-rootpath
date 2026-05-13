@@ -11,8 +11,8 @@ docker run -d -p 80:8080 -e WEBUI_ROOT_PATH=/openwebui -e ENABLE_PERSISTENT_CONF
 Navigate to `http://localhost/openwebui/` in your browser.
 
 ## Why not cut a PR against open-webui?
-The core Open WebUI [team doesn't want this feature to be merged](https://github.com/open-webui/open-webui/pull/23242#issuecomment-4159269533).
-This repo intends to host a minimal, ideally fully automated solution, to keep up to date with upstream changes while adding Root Path support.
+The core Open WebUI [team doesn't want this feature to be merged](https://github.com/open-webui/open-webui/pull/23242#issuecomment-4159269533).  
+This repo intends to host a minimal, ideally fully automated solution, to keep up to date with upstream changes while adding Root Path support.  
 We hope that the Open WebUI team will reconsider this feature in the future.
 
 For development and architecture details, see [`DEVELOPERS.md`](DEVELOPERS.md).
