@@ -47,32 +47,70 @@ docker exec selenium pip3 install selenium >/dev/null 2>&1
 
 OVERALL_EXIT=0
 
+# ── Via Nginx (port 80) ─────────────────────────────────────────────
+echo "=== Running tests via Nginx (port 80) ==="
+echo
+
 # Copy and run the main test
-echo "Running main E2E test..."
+echo "Running main E2E test (nginx)..."
 docker cp "$SCRIPT_DIR/test_rootpath.py" selenium:/tmp/test_rootpath.py
-docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_rootpath.py
-if [ $? -ne 0 ]; then OVERALL_EXIT=1; fi
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_rootpath.py || OVERALL_EXIT=1
 
 # Copy and run the model profile image test
 echo
-echo "Running model profile image test..."
+echo "Running model profile image test (nginx)..."
 docker cp "$SCRIPT_DIR/test_model_image.py" selenium:/tmp/test_model_image.py
-docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e E2E_BASE_HOST=http://nginx:80 -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_model_image.py
-if [ $? -ne 0 ]; then OVERALL_EXIT=1; fi
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e E2E_BASE_HOST=http://nginx:80 -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_model_image.py || OVERALL_EXIT=1
 
 # Copy and run the profile links test
 echo
-echo "Running profile links test..."
+echo "Running profile links test (nginx)..."
 docker cp "$SCRIPT_DIR/test_profile_links.py" selenium:/tmp/test_profile_links.py
-docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://nginx:80${ROOT_PATH}/" -e E2E_BASE_HOST=http://nginx:80 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_profile_links.py
-if [ $? -ne 0 ]; then OVERALL_EXIT=1; fi
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://nginx:80${ROOT_PATH}/" -e E2E_BASE_HOST=http://nginx:80 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_profile_links.py || OVERALL_EXIT=1
 
 # Copy and run the admin settings links test
 echo
-echo "Running admin settings links test..."
+echo "Running admin settings links test (nginx)..."
 docker cp "$SCRIPT_DIR/test_admin_settings.py" selenium:/tmp/test_admin_settings.py
-docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://nginx:80${ROOT_PATH}/" -e E2E_BASE_HOST=http://nginx:80 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_admin_settings.py
-if [ $? -ne 0 ]; then OVERALL_EXIT=1; fi
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://nginx:80${ROOT_PATH}/" -e E2E_BASE_HOST=http://nginx:80 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_admin_settings.py || OVERALL_EXIT=1
+
+# Stop Nginx so direct tests can't accidentally route through it
+echo
+echo "Stopping Nginx container for direct tests..."
+docker compose -f "$REPO_ROOT/docker-compose.yml" stop nginx
+
+# ── Direct (port 8080, bypassing Nginx) ─────────────────────────────
+echo
+echo "=== Running tests directly on port 8080 (bypassing Nginx) ==="
+echo
+
+# Copy and run the main test
+echo "Running main E2E test (direct 8080)..."
+docker cp "$SCRIPT_DIR/test_rootpath.py" selenium:/tmp/test_rootpath.py
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://open-webui:8080${ROOT_PATH}/" -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_rootpath.py || OVERALL_EXIT=1
+
+# Copy and run the model profile image test
+echo
+echo "Running model profile image test (direct 8080)..."
+docker cp "$SCRIPT_DIR/test_model_image.py" selenium:/tmp/test_model_image.py
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e E2E_BASE_HOST=http://open-webui:8080 -e E2E_ROOT_PATH="$ROOT_PATH" selenium python3 /tmp/test_model_image.py || OVERALL_EXIT=1
+
+# Copy and run the profile links test
+echo
+echo "Running profile links test (direct 8080)..."
+docker cp "$SCRIPT_DIR/test_profile_links.py" selenium:/tmp/test_profile_links.py
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://open-webui:8080${ROOT_PATH}/" -e E2E_BASE_HOST=http://open-webui:8080 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_profile_links.py || OVERALL_EXIT=1
+
+# Copy and run the admin settings links test
+echo
+echo "Running admin settings links test (direct 8080)..."
+docker cp "$SCRIPT_DIR/test_admin_settings.py" selenium:/tmp/test_admin_settings.py
+docker exec -e SCREENSHOT_DIR=/tmp/e2e-screenshots -e "E2E_BASE_URL=http://open-webui:8080${ROOT_PATH}/" -e E2E_BASE_HOST=http://open-webui:8080 -e "E2E_ROOT_PATH=$ROOT_PATH" selenium python3 /tmp/test_admin_settings.py || OVERALL_EXIT=1
+
+# Restart Nginx to restore the stack
+echo
+echo "Restarting Nginx container..."
+docker compose -f "$REPO_ROOT/docker-compose.yml" start nginx
 
 # Clean up
 echo "Cleaning up..."

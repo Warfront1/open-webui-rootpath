@@ -9,6 +9,7 @@ Verifies that:
 """
 import sys
 import os
+import io
 import urllib.request
 import urllib.error
 
@@ -25,6 +26,21 @@ from selenium.webdriver.common.action_chains import ActionChains
 
 errors = []
 
+_log_buffer = io.StringIO()
+
+class TeeOutput:
+    def __init__(self, *targets):
+        self._targets = targets
+    def write(self, data):
+        for t in self._targets:
+            t.write(data)
+    def flush(self):
+        for t in self._targets:
+            t.flush()
+
+sys.stdout = TeeOutput(sys.__stdout__, _log_buffer)
+sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
+
 def save_screenshot(prefix="failure"):
     try:
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -34,6 +50,17 @@ def save_screenshot(prefix="failure"):
         print(f"   Screenshot saved: {path}")
     except Exception as ss_err:
         print(f"   WARNING: Could not save screenshot: {ss_err}")
+
+def save_log(prefix="failure"):
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        path = os.path.join(SCREENSHOT_DIR, f"{prefix}_{ts}.txt")
+        with open(path, "w") as f:
+            f.write(_log_buffer.getvalue())
+        print(f"   Log saved: {path}")
+    except Exception as log_err:
+        print(f"   WARNING: Could not save log: {log_err}")
 
 opts = Options()
 opts.add_argument("--headless=new")
@@ -125,11 +152,13 @@ try:
             print(f"  - {e}")
         print("=" * 60)
         save_screenshot("failure_model_profile_image")
+        save_log("failure_model_profile_image")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
         save_screenshot("success_model_profile_image")
+        save_log("success_model_profile_image")
         sys.exit(0)
 
 except Exception as e:
@@ -137,6 +166,7 @@ except Exception as e:
     import traceback
     traceback.print_exc()
     save_screenshot("failure_model_profile_image")
+    save_log("failure_model_profile_image")
     sys.exit(2)
 finally:
     driver.quit()

@@ -16,6 +16,7 @@ Prerequisites:
 import time
 import sys
 import os
+import io
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -26,7 +27,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 # URL must use the Docker network hostname (nginx service name) and the root path prefix
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 BASE_URL = os.environ.get("E2E_BASE_URL", f"http://nginx:80{ROOT_PATH}/")
-MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "kimi")
+MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "minimax-m2.5")
 CHAT_MESSAGE = os.environ.get("E2E_CHAT_MESSAGE", "Say hello in one word")
 RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "60"))
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
@@ -36,6 +37,21 @@ opts.add_argument("--headless=new")
 opts.add_argument("--no-sandbox")
 opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
+
+_log_buffer = io.StringIO()
+
+class TeeOutput:
+    def __init__(self, *targets):
+        self._targets = targets
+    def write(self, data):
+        for t in self._targets:
+            t.write(data)
+    def flush(self):
+        for t in self._targets:
+            t.flush()
+
+sys.stdout = TeeOutput(sys.__stdout__, _log_buffer)
+sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
 
 driver = webdriver.Chrome(options=opts)
 errors = []
@@ -49,6 +65,17 @@ def save_screenshot(prefix="failure"):
         print(f"   Screenshot saved: {path}")
     except Exception as ss_err:
         print(f"   WARNING: Could not save screenshot: {ss_err}")
+
+def save_log(prefix="failure"):
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        path = os.path.join(SCREENSHOT_DIR, f"{prefix}_{ts}.txt")
+        with open(path, "w") as f:
+            f.write(_log_buffer.getvalue())
+        print(f"   Log saved: {path}")
+    except Exception as log_err:
+        print(f"   WARNING: Could not save log: {log_err}")
 
 try:
     # ── Step 1: Load page ────────────────────────────────────────
@@ -92,6 +119,8 @@ try:
         driver.execute_script("arguments[0].click();", model_btns[0])
         time.sleep(2)
         options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+        available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+        print(f"   Available models ({len(available_models)}): {available_models}")
         selected = False
         for opt in options:
             if MODEL_KEYWORD in opt.text.lower():
@@ -218,11 +247,13 @@ try:
             print(f"  - {e}")
         print("=" * 60)
         save_screenshot()
+        save_log()
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
         save_screenshot("success")
+        save_log("success")
         sys.exit(0)
 
 except Exception as e:
@@ -230,6 +261,7 @@ except Exception as e:
     import traceback
     traceback.print_exc()
     save_screenshot()
+    save_log()
     sys.exit(2)
 finally:
     driver.quit()
