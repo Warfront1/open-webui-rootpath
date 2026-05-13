@@ -127,7 +127,23 @@ try:
         driver.execute_script("arguments[0].click();", model_btns[0])
         time.sleep(2)
 
-        for attempt in range(MODEL_WAIT_TIMEOUT):
+        # Try to find the search/filter input inside the model dropdown
+        search_inputs = driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='Search'], input[placeholder*='search'], input[placeholder*='Filter'], input[placeholder*='filter']")
+        if not search_inputs:
+            search_inputs = driver.find_elements(By.CSS_SELECTOR, "[role='listbox'] input, [role='dialog'] input, .model-selector input, input[type='text']")
+        if not search_inputs:
+            all_inputs = driver.find_elements(By.CSS_SELECTOR, "input")
+            search_inputs = [inp for inp in all_inputs if inp.is_displayed() and inp.get_attribute("type") in ("text", "search")]
+
+        if search_inputs:
+            search_input = search_inputs[0]
+            search_input.click()
+            time.sleep(0.5)
+            search_input.clear()
+            search_input.send_keys(MODEL_KEYWORD)
+            print(f"   Typed '{MODEL_KEYWORD}' into model search box")
+            time.sleep(2)
+
             options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
             for opt in options:
                 if MODEL_KEYWORD in opt.text.lower():
@@ -135,15 +151,32 @@ try:
                     print(f"   Selected model: {opt.text.strip()}")
                     selected = True
                     break
-            if selected:
-                break
-            time.sleep(1)
 
-        if not selected:
-            options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
-            available_models = [opt.text.strip() for opt in options if opt.text.strip()]
-            print(f"   Available models ({len(available_models)}): {available_models}")
-            errors.append(f"No model matching '{MODEL_KEYWORD}' found after {MODEL_WAIT_TIMEOUT}s. Available: {available_models}")
+            if not selected:
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+                print(f"   Available models after search ({len(available_models)}): {available_models}")
+                errors.append(f"No model matching '{MODEL_KEYWORD}' after search. Available: {available_models}")
+        else:
+            # Fallback: old scan-without-search approach
+            print("   No search input found, falling back to scanning model list")
+            for attempt in range(MODEL_WAIT_TIMEOUT):
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                for opt in options:
+                    if MODEL_KEYWORD in opt.text.lower():
+                        driver.execute_script("arguments[0].click();", opt)
+                        print(f"   Selected model: {opt.text.strip()}")
+                        selected = True
+                        break
+                if selected:
+                    break
+                time.sleep(1)
+
+            if not selected:
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+                print(f"   Available models ({len(available_models)}): {available_models}")
+                errors.append(f"No model matching '{MODEL_KEYWORD}' found after {MODEL_WAIT_TIMEOUT}s. Available: {available_models}")
         time.sleep(2)
 
     # Dismiss any post-selection modals
