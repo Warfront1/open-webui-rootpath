@@ -12,7 +12,7 @@ services:
       - ENABLE_PERSISTENT_CONFIG=False
       - WEBUI_AUTH=false
       - OPENAI_API_BASE_URL=https://ollama.com/v1
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY_VALUE}
       - DEFAULT_PINNED_MODELS=kimi-k2.6
       - DEFAULT_MODELS=kimi-k2.6
 #      - ENABLE_OPENAI_API_PASSTHROUGH=true
