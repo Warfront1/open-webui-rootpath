@@ -58,8 +58,8 @@ def transform_main_py(path):
     with open(filepath, 'r') as f:
         content = f.read()
 
-    if "root_path': WEBUI_ROOT_PATH" in content:
-        print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present in config")
+    if "PathPrefixStripMiddleware" in content:
+        print(f"  [skip] {filepath} — PathPrefixStripMiddleware already present")
         return
 
     content = content.replace(
@@ -87,6 +87,18 @@ def transform_main_py(path):
     content = content.replace(
         "swagger_favicon_url='/static/swagger-ui/favicon.png'",
         "swagger_favicon_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/favicon.png'"
+    )
+
+    # Import PathPrefixStripMiddleware alongside other middleware imports
+    content = content.replace(
+        "from open_webui.utils.asgi_middleware import (\n    AuthTokenMiddleware,\n    CommitSessionMiddleware,\n    RedirectMiddleware,\n    WebsocketUpgradeGuardMiddleware,\n)",
+        "from open_webui.utils.asgi_middleware import (\n    AuthTokenMiddleware,\n    CommitSessionMiddleware,\n    RedirectMiddleware,\n    WebsocketUpgradeGuardMiddleware,\n)\nfrom open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
+    )
+
+    # Add PathPrefixStripMiddleware as outermost middleware (added last = runs first)
+    content = content.replace(
+        "app.add_middleware(\n    CORSMiddleware,\n    allow_origins=CORS_ALLOW_ORIGIN,\n    allow_credentials=True,\n    allow_methods=['*'],\n    allow_headers=['*'],\n)",
+        "app.add_middleware(\n    CORSMiddleware,\n    allow_origins=CORS_ALLOW_ORIGIN,\n    allow_credentials=True,\n    allow_methods=['*'],\n    allow_headers=['*'],\n)\n\n# PathPrefixStripMiddleware must be added last so it runs first (outermost),\n# stripping WEBUI_ROOT_PATH from incoming request paths before any other\n# middleware or FastAPI routing processes them.\napp.add_middleware(PathPrefixStripMiddleware)"
     )
 
     with open(filepath, 'w') as f:

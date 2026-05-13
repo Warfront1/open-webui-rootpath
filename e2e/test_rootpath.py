@@ -16,6 +16,7 @@ Prerequisites:
 import time
 import sys
 import os
+import io
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -23,12 +24,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_utils import verify_routing_mode
+
+verify_routing_mode()
+
 # URL must use the Docker network hostname (nginx service name) and the root path prefix
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 BASE_URL = os.environ.get("E2E_BASE_URL", f"http://nginx:80{ROOT_PATH}/")
-MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "kimi")
+MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "minimax-m2")
+MODEL_WAIT_TIMEOUT = int(os.environ.get("E2E_MODEL_WAIT_TIMEOUT", "8"))
 CHAT_MESSAGE = os.environ.get("E2E_CHAT_MESSAGE", "Say hello in one word")
-RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "60"))
+RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "20"))
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
 
 opts = Options()
@@ -37,8 +44,24 @@ opts.add_argument("--no-sandbox")
 opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
 
+_log_buffer = io.StringIO()
+
+class TeeOutput:
+    def __init__(self, *targets):
+        self._targets = targets
+    def write(self, data):
+        for t in self._targets:
+            t.write(data)
+    def flush(self):
+        for t in self._targets:
+            t.flush()
+
+sys.stdout = TeeOutput(sys.__stdout__, _log_buffer)
+sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
+
 driver = webdriver.Chrome(options=opts)
 errors = []
+MODE_SUFFIX = os.environ.get("E2E_MODE", "unknown")
 
 def save_screenshot(prefix="failure"):
     try:
@@ -49,6 +72,17 @@ def save_screenshot(prefix="failure"):
         print(f"   Screenshot saved: {path}")
     except Exception as ss_err:
         print(f"   WARNING: Could not save screenshot: {ss_err}")
+
+def save_log(prefix="failure"):
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        path = os.path.join(SCREENSHOT_DIR, f"{prefix}_{ts}.txt")
+        with open(path, "w") as f:
+            f.write(_log_buffer.getvalue())
+        print(f"   Log saved: {path}")
+    except Exception as log_err:
+        print(f"   WARNING: Could not save log: {log_err}")
 
 try:
     # ── Step 1: Load page ────────────────────────────────────────
@@ -86,21 +120,63 @@ try:
     # ── Step 4: Select model ─────────────────────────────────────
     print("\n3. Selecting model...")
     model_btns = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Select a model']")
+    selected = False
     if not model_btns:
         errors.append("No model selector button found")
     else:
         driver.execute_script("arguments[0].click();", model_btns[0])
         time.sleep(2)
-        options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
-        selected = False
-        for opt in options:
-            if MODEL_KEYWORD in opt.text.lower():
-                driver.execute_script("arguments[0].click();", opt)
-                print(f"   Selected model: {opt.text.strip()}")
-                selected = True
-                break
-        if not selected:
-            errors.append(f"No model matching '{MODEL_KEYWORD}' found in dropdown")
+
+        # Try to find the search/filter input inside the model dropdown
+        search_inputs = driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='Search'], input[placeholder*='search'], input[placeholder*='Filter'], input[placeholder*='filter']")
+        if not search_inputs:
+            search_inputs = driver.find_elements(By.CSS_SELECTOR, "[role='listbox'] input, [role='dialog'] input, .model-selector input, input[type='text']")
+        if not search_inputs:
+            all_inputs = driver.find_elements(By.CSS_SELECTOR, "input")
+            search_inputs = [inp for inp in all_inputs if inp.is_displayed() and inp.get_attribute("type") in ("text", "search")]
+
+        if search_inputs:
+            search_input = search_inputs[0]
+            search_input.click()
+            time.sleep(0.5)
+            search_input.clear()
+            search_input.send_keys(MODEL_KEYWORD)
+            print(f"   Typed '{MODEL_KEYWORD}' into model search box")
+            time.sleep(2)
+
+            options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+            for opt in options:
+                if MODEL_KEYWORD in opt.text.lower():
+                    driver.execute_script("arguments[0].click();", opt)
+                    print(f"   Selected model: {opt.text.strip()}")
+                    selected = True
+                    break
+
+            if not selected:
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+                print(f"   Available models after search ({len(available_models)}): {available_models}")
+                errors.append(f"No model matching '{MODEL_KEYWORD}' after search. Available: {available_models}")
+        else:
+            # Fallback: old scan-without-search approach
+            print("   No search input found, falling back to scanning model list")
+            for attempt in range(MODEL_WAIT_TIMEOUT):
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                for opt in options:
+                    if MODEL_KEYWORD in opt.text.lower():
+                        driver.execute_script("arguments[0].click();", opt)
+                        print(f"   Selected model: {opt.text.strip()}")
+                        selected = True
+                        break
+                if selected:
+                    break
+                time.sleep(1)
+
+            if not selected:
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+                available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+                print(f"   Available models ({len(available_models)}): {available_models}")
+                errors.append(f"No model matching '{MODEL_KEYWORD}' found after {MODEL_WAIT_TIMEOUT}s. Available: {available_models}")
         time.sleep(2)
 
     # Dismiss any post-selection modals
@@ -114,16 +190,22 @@ try:
         time.sleep(0.5)
 
     # ── Step 5: Find chat input and send message ─────────────────
-    print("\n4. Finding chat input...")
+    if not selected:
+        print("\n4. Skipping chat — no model selected.")
+    else:
+        print("\n4. Finding chat input...")
     chat_input = None
-    textareas = driver.find_elements(By.TAG_NAME, "textarea")
-    content_editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
-    if textareas:
-        chat_input = textareas[0]
-    elif content_editables:
-        chat_input = content_editables[0]
+    if selected:
+        textareas = driver.find_elements(By.TAG_NAME, "textarea")
+        content_editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
+        if textareas:
+            chat_input = textareas[0]
+        elif content_editables:
+            chat_input = content_editables[0]
 
-    if not chat_input:
+    if not selected:
+        pass
+    elif not chat_input:
         errors.append("No chat input (textarea or contenteditable) found")
     else:
         print("   Chat input found")
@@ -217,19 +299,22 @@ try:
         for e in errors:
             print(f"  - {e}")
         print("=" * 60)
-        save_screenshot()
+        save_screenshot(f"failure_{MODE_SUFFIX}")
+        save_log(f"failure_{MODE_SUFFIX}")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
-        save_screenshot("success")
+        save_screenshot(f"success_{MODE_SUFFIX}")
+        save_log(f"success_{MODE_SUFFIX}")
         sys.exit(0)
 
 except Exception as e:
     print(f"FATAL: {e}")
     import traceback
     traceback.print_exc()
-    save_screenshot()
+    save_screenshot(f"failure_{MODE_SUFFIX}")
+    save_log(f"failure_{MODE_SUFFIX}")
     sys.exit(2)
 finally:
     driver.quit()

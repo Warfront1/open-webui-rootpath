@@ -9,6 +9,7 @@ Verifies that:
 import time
 import sys
 import os
+import io
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -18,12 +19,32 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_utils import verify_routing_mode
+
+verify_routing_mode()
+
 BASE_HOST = os.environ.get("E2E_BASE_HOST", "http://nginx:80")
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 BASE_URL = os.environ.get("E2E_BASE_URL", f"{BASE_HOST}{ROOT_PATH}/")
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
 
 errors = []
+
+_log_buffer = io.StringIO()
+
+class TeeOutput:
+    def __init__(self, *targets):
+        self._targets = targets
+    def write(self, data):
+        for t in self._targets:
+            t.write(data)
+    def flush(self):
+        for t in self._targets:
+            t.flush()
+
+sys.stdout = TeeOutput(sys.__stdout__, _log_buffer)
+sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
 
 opts = Options()
 opts.add_argument("--headless=new")
@@ -32,6 +53,7 @@ opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
 
 driver = webdriver.Chrome(options=opts)
+MODE_SUFFIX = os.environ.get("E2E_MODE", "unknown")
 
 def save_screenshot(prefix="failure"):
     try:
@@ -42,6 +64,17 @@ def save_screenshot(prefix="failure"):
         print(f"   Screenshot saved: {path}")
     except Exception as ss_err:
         print(f"   WARNING: Could not save screenshot: {ss_err}")
+
+def save_log(prefix="failure"):
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        path = os.path.join(SCREENSHOT_DIR, f"{prefix}_{ts}.txt")
+        with open(path, "w") as f:
+            f.write(_log_buffer.getvalue())
+        print(f"   Log saved: {path}")
+    except Exception as log_err:
+        print(f"   WARNING: Could not save log: {log_err}")
 
 try:
     # ── Step 1: Load page ────────────────────────────────────────────────────
@@ -191,19 +224,22 @@ try:
         for e in errors:
             print(f"  - {e}")
         print("=" * 60)
-        save_screenshot("failure_profile_links")
+        save_screenshot(f"failure_profile_links_{MODE_SUFFIX}")
+        save_log(f"failure_profile_links_{MODE_SUFFIX}")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
-        save_screenshot("success_profile_links")
+        save_screenshot(f"success_profile_links_{MODE_SUFFIX}")
+        save_log(f"success_profile_links_{MODE_SUFFIX}")
         sys.exit(0)
 
 except Exception as e:
     print(f"FATAL: {e}")
     import traceback
     traceback.print_exc()
-    save_screenshot("failure_profile_links")
+    save_screenshot(f"failure_profile_links_{MODE_SUFFIX}")
+    save_log(f"failure_profile_links_{MODE_SUFFIX}")
     sys.exit(2)
 finally:
     driver.quit()

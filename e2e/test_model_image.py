@@ -9,12 +9,18 @@ Verifies that:
 """
 import sys
 import os
+import io
 import urllib.request
 import urllib.error
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_utils import verify_routing_mode
 
 BASE_HOST = os.environ.get("E2E_BASE_HOST", "http://nginx:80")
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
+
+verify_routing_mode()
 
 from datetime import datetime
 from selenium import webdriver
@@ -24,6 +30,21 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
 errors = []
+
+_log_buffer = io.StringIO()
+
+class TeeOutput:
+    def __init__(self, *targets):
+        self._targets = targets
+    def write(self, data):
+        for t in self._targets:
+            t.write(data)
+    def flush(self):
+        for t in self._targets:
+            t.flush()
+
+sys.stdout = TeeOutput(sys.__stdout__, _log_buffer)
+sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
 
 def save_screenshot(prefix="failure"):
     try:
@@ -35,6 +56,17 @@ def save_screenshot(prefix="failure"):
     except Exception as ss_err:
         print(f"   WARNING: Could not save screenshot: {ss_err}")
 
+def save_log(prefix="failure"):
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        path = os.path.join(SCREENSHOT_DIR, f"{prefix}_{ts}.txt")
+        with open(path, "w") as f:
+            f.write(_log_buffer.getvalue())
+        print(f"   Log saved: {path}")
+    except Exception as log_err:
+        print(f"   WARNING: Could not save log: {log_err}")
+
 opts = Options()
 opts.add_argument("--headless=new")
 opts.add_argument("--no-sandbox")
@@ -42,6 +74,7 @@ opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
 
 driver = webdriver.Chrome(options=opts)
+MODE_SUFFIX = os.environ.get("E2E_MODE", "unknown")
 
 try:
     # ── Test 1: Model profile image fallback redirect includes root path ─────
@@ -124,19 +157,22 @@ try:
         for e in errors:
             print(f"  - {e}")
         print("=" * 60)
-        save_screenshot("failure_model_profile_image")
+        save_screenshot(f"failure_model_profile_image_{MODE_SUFFIX}")
+        save_log(f"failure_model_profile_image_{MODE_SUFFIX}")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
-        save_screenshot("success_model_profile_image")
+        save_screenshot(f"success_model_profile_image_{MODE_SUFFIX}")
+        save_log(f"success_model_profile_image_{MODE_SUFFIX}")
         sys.exit(0)
 
 except Exception as e:
     print(f"FATAL: {e}")
     import traceback
     traceback.print_exc()
-    save_screenshot("failure_model_profile_image")
+    save_screenshot(f"failure_model_profile_image_{MODE_SUFFIX}")
+    save_log(f"failure_model_profile_image_{MODE_SUFFIX}")
     sys.exit(2)
 finally:
     driver.quit()

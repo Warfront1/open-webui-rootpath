@@ -1,11 +1,8 @@
 services:
   open-webui:
-    ports:
-      - "8080:8080"
     build:
-      context: .
+      context: ..
       args:
-        # Read from UPSTREAM_VERSION file: UPSTREAM_VERSION=$(cat UPSTREAM_VERSION) docker compose build
         UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.9.5}
     environment:
       - WEBUI_ROOT_PATH=/openwebui
@@ -15,21 +12,21 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY_VALUE}
       - DEFAULT_PINNED_MODELS=kimi-k2.6
       - DEFAULT_MODELS=kimi-k2.6
-#      - ENABLE_OPENAI_API_PASSTHROUGH=true
-#    volumes:
-#      - open-webui-data:/app/backend/data
+    networks:
+      - backend
     restart: unless-stopped
 
   nginx:
     image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ../nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - open-webui
+    networks:
+      - frontend
+      - backend
     restart: unless-stopped
 
-volumes:
-  open-webui-data:
+networks:
+  frontend:
+  backend:
