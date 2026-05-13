@@ -29,7 +29,7 @@ jobs:
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-#        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
 
       - name: Publish Docker Container
         shell: bash
@@ -43,4 +43,4 @@ jobs:
             $TAGS \
             --push \
             .
-#        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
