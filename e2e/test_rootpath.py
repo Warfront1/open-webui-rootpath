@@ -24,12 +24,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_utils import verify_routing_mode
+
+verify_routing_mode()
+
 # URL must use the Docker network hostname (nginx service name) and the root path prefix
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 BASE_URL = os.environ.get("E2E_BASE_URL", f"http://nginx:80{ROOT_PATH}/")
-MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "minimax-m2.5")
+MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "minimax-m2")
+MODEL_WAIT_TIMEOUT = int(os.environ.get("E2E_MODEL_WAIT_TIMEOUT", "8"))
 CHAT_MESSAGE = os.environ.get("E2E_CHAT_MESSAGE", "Say hello in one word")
-RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "60"))
+RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "20"))
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
 
 opts = Options()
@@ -55,6 +61,7 @@ sys.stderr = TeeOutput(sys.__stderr__, _log_buffer)
 
 driver = webdriver.Chrome(options=opts)
 errors = []
+MODE_SUFFIX = os.environ.get("E2E_MODE", "unknown")
 
 def save_screenshot(prefix="failure"):
     try:
@@ -113,23 +120,30 @@ try:
     # ── Step 4: Select model ─────────────────────────────────────
     print("\n3. Selecting model...")
     model_btns = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Select a model']")
+    selected = False
     if not model_btns:
         errors.append("No model selector button found")
     else:
         driver.execute_script("arguments[0].click();", model_btns[0])
         time.sleep(2)
-        options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
-        available_models = [opt.text.strip() for opt in options if opt.text.strip()]
-        print(f"   Available models ({len(available_models)}): {available_models}")
-        selected = False
-        for opt in options:
-            if MODEL_KEYWORD in opt.text.lower():
-                driver.execute_script("arguments[0].click();", opt)
-                print(f"   Selected model: {opt.text.strip()}")
-                selected = True
+
+        for attempt in range(MODEL_WAIT_TIMEOUT):
+            options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+            for opt in options:
+                if MODEL_KEYWORD in opt.text.lower():
+                    driver.execute_script("arguments[0].click();", opt)
+                    print(f"   Selected model: {opt.text.strip()}")
+                    selected = True
+                    break
+            if selected:
                 break
+            time.sleep(1)
+
         if not selected:
-            errors.append(f"No model matching '{MODEL_KEYWORD}' found in dropdown")
+            options = driver.find_elements(By.CSS_SELECTOR, "[role='option'], li")
+            available_models = [opt.text.strip() for opt in options if opt.text.strip()]
+            print(f"   Available models ({len(available_models)}): {available_models}")
+            errors.append(f"No model matching '{MODEL_KEYWORD}' found after {MODEL_WAIT_TIMEOUT}s. Available: {available_models}")
         time.sleep(2)
 
     # Dismiss any post-selection modals
@@ -143,16 +157,22 @@ try:
         time.sleep(0.5)
 
     # ── Step 5: Find chat input and send message ─────────────────
-    print("\n4. Finding chat input...")
+    if not selected:
+        print("\n4. Skipping chat — no model selected.")
+    else:
+        print("\n4. Finding chat input...")
     chat_input = None
-    textareas = driver.find_elements(By.TAG_NAME, "textarea")
-    content_editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
-    if textareas:
-        chat_input = textareas[0]
-    elif content_editables:
-        chat_input = content_editables[0]
+    if selected:
+        textareas = driver.find_elements(By.TAG_NAME, "textarea")
+        content_editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
+        if textareas:
+            chat_input = textareas[0]
+        elif content_editables:
+            chat_input = content_editables[0]
 
-    if not chat_input:
+    if not selected:
+        pass
+    elif not chat_input:
         errors.append("No chat input (textarea or contenteditable) found")
     else:
         print("   Chat input found")
@@ -246,22 +266,22 @@ try:
         for e in errors:
             print(f"  - {e}")
         print("=" * 60)
-        save_screenshot()
-        save_log()
+        save_screenshot(f"failure_{MODE_SUFFIX}")
+        save_log(f"failure_{MODE_SUFFIX}")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
-        save_screenshot("success")
-        save_log("success")
+        save_screenshot(f"success_{MODE_SUFFIX}")
+        save_log(f"success_{MODE_SUFFIX}")
         sys.exit(0)
 
 except Exception as e:
     print(f"FATAL: {e}")
     import traceback
     traceback.print_exc()
-    save_screenshot()
-    save_log()
+    save_screenshot(f"failure_{MODE_SUFFIX}")
+    save_log(f"failure_{MODE_SUFFIX}")
     sys.exit(2)
 finally:
     driver.quit()

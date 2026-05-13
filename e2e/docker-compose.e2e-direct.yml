@@ -1,0 +1,20 @@
+services:
+  open-webui:
+    build:
+      context: ..
+      args:
+        UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.9.5}
+    environment:
+      - WEBUI_ROOT_PATH=/openwebui
+      - ENABLE_PERSISTENT_CONFIG=False
+      - WEBUI_AUTH=false
+      - OPENAI_API_BASE_URL=https://ollama.com/v1
+      - OPENAI_API_KEY=${OPENAI_API_KEY_VALUE}
+      - DEFAULT_PINNED_MODELS=kimi-k2.6
+      - DEFAULT_MODELS=kimi-k2.6
+    networks:
+      - e2e
+    restart: unless-stopped
+
+networks:
+  e2e:

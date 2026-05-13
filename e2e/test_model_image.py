@@ -13,9 +13,14 @@ import io
 import urllib.request
 import urllib.error
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_utils import verify_routing_mode
+
 BASE_HOST = os.environ.get("E2E_BASE_HOST", "http://nginx:80")
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
+
+verify_routing_mode()
 
 from datetime import datetime
 from selenium import webdriver
@@ -69,6 +74,7 @@ opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
 
 driver = webdriver.Chrome(options=opts)
+MODE_SUFFIX = os.environ.get("E2E_MODE", "unknown")
 
 try:
     # ── Test 1: Model profile image fallback redirect includes root path ─────
@@ -151,22 +157,22 @@ try:
         for e in errors:
             print(f"  - {e}")
         print("=" * 60)
-        save_screenshot("failure_model_profile_image")
-        save_log("failure_model_profile_image")
+        save_screenshot(f"failure_model_profile_image_{MODE_SUFFIX}")
+        save_log(f"failure_model_profile_image_{MODE_SUFFIX}")
         sys.exit(1)
     else:
         print("ALL CHECKS PASSED")
         print("=" * 60)
-        save_screenshot("success_model_profile_image")
-        save_log("success_model_profile_image")
+        save_screenshot(f"success_model_profile_image_{MODE_SUFFIX}")
+        save_log(f"success_model_profile_image_{MODE_SUFFIX}")
         sys.exit(0)
 
 except Exception as e:
     print(f"FATAL: {e}")
     import traceback
     traceback.print_exc()
-    save_screenshot("failure_model_profile_image")
-    save_log("failure_model_profile_image")
+    save_screenshot(f"failure_model_profile_image_{MODE_SUFFIX}")
+    save_log(f"failure_model_profile_image_{MODE_SUFFIX}")
     sys.exit(2)
 finally:
     driver.quit()
