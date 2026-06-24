@@ -1,0 +1,17 @@
+diff --git a/backend/open_webui/utils/oauth.py b/backend/open_webui/utils/oauth.py
+index 320124b..0af8e35 100644
+--- a/backend/open_webui/utils/oauth.py
++++ b/backend/open_webui/utils/oauth.py
+@@ -1770,6 +1770,12 @@ class OAuthManager:
+             redirect_url = f'{redirect_url}?error={urllib.parse.quote_plus(error_message)}'
+             return RedirectResponse(url=redirect_url, headers=response.headers)
+ 
++        # Successful login: skip the /auth page and go directly to the app root.
++        # Under subpath deployments the SvelteKit /auth route does not reliably
++        # auto-redirect to / after the session cookie is set, leaving the user
++        # stuck on the login page. Redirecting straight to / avoids that hop.
++        redirect_url = f'{redirect_base_url}/'
++
+         response = RedirectResponse(url=redirect_url, headers=response.headers)
+ 
+         # Compute cookie expiry from JWT lifetime
