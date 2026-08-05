@@ -56,6 +56,7 @@ RUN npm ci --force
 COPY --from=prepare /upstream/ .
 ENV APP_BUILD_HASH=${BUILD_HASH}
 ENV WEBUI_ROOT_PATH=${WEBUI_ROOT_PATH}
+ENV NODE_OPTIONS=--max-old-space-size=6144
 RUN npm run build
 
 # Post-build: rewrite root-absolute paths SvelteKit doesn't prefix correctly.

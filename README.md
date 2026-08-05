@@ -1,4 +1,4 @@
-# Open WebUI Root Path Support
+# Open WebUI Root Path Support [![Docker Hub](https://img.shields.io/docker/pulls/warfront1owu/open-webui)](https://hub.docker.com/r/warfront1owu/open-webui) [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/XCcQpEehej)
 
 Deploy [Open WebUI](https://github.com/open-webui/open-webui) under a URL prefix (e.g. `https://example.com/openwebui/`), controlled by a single `WEBUI_ROOT_PATH` environment variable.
 
