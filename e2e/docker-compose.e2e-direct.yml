@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       args:
-        UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.9.5}
+        UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.11.0}
     environment:
       - WEBUI_ROOT_PATH=/openwebui
       - ENABLE_PERSISTENT_CONFIG=False

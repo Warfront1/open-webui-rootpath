@@ -17,12 +17,14 @@ export function rootPathPreprocess() {
 
       const hasBaseImport = /import\s*\{[^}]*base[^}]*\}\s*from\s*['"]\$app\/paths['"]/.test(modified);
 
-      // 1a. Transform goto('/...'), goto("/...") — simple string args
+      // 1a. Transform goto('/...'), goto("/...") — simple string args.
+      // Also handles goto('/...', { ... }) with a second argument (e.g.
+      // { replaceState: true }), used for admin/workspace navigation.
       modified = modified.replace(
-        /\bgoto\(\s*(['"])(\/[^'"]*)\1\s*\)/g,
-        (match, quote, path) => {
+        /\bgoto\(\s*(['"])(\/[^'"]*)\1(\s*,[^)]*)?\)/g,
+        (match, quote, path, secondArg) => {
           needsBase = true;
-          return `goto(\`\${base}${path}\`)`;
+          return `goto(\`\${base}${path}\`${secondArg || ''})`;
         }
       );
 
@@ -207,12 +209,13 @@ export function rootPathPreprocess() {
         }
       );
 
-      // Transform goto('/...') in inline event handlers in markup
+      // Transform goto('/...') in inline event handlers in markup.
+      // Also handles goto('/...', { ... }) with a second argument.
       modified = modified.replace(
-        /\bgoto\(\s*(['"])(\/[^'"]*)\1\s*\)/g,
-        (match, quote, path) => {
+        /\bgoto\(\s*(['"])(\/[^'"]*)\1(\s*,[^)]*)?\)/g,
+        (match, quote, path, secondArg) => {
           needsBase = true;
-          return `goto(\`\${base}${path}\`)`;
+          return `goto(\`\${base}${path}\`${secondArg || ''})`;
         }
       );
 

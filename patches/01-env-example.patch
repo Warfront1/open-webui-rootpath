@@ -1,7 +1,8 @@
 diff --git a/.env.example b/.env.example
+index 6f674e6..d821a1e 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -16,7 +16,12 @@ CORS_ALLOW_ORIGIN='*'
+@@ -22,6 +22,11 @@ ENABLE_PLUGINS=true
  # For production you should set this to match the proxy configuration (127.0.0.1)
  FORWARDED_ALLOW_IPS='*'
  
@@ -13,6 +14,3 @@ diff --git a/.env.example b/.env.example
  # DO NOT TRACK
  SCARF_NO_ANALYTICS=true
  DO_NOT_TRACK=true
--ANONYMIZED_TELEMETRY=false
-\ No newline at end of file
-+ANONYMIZED_TELEMETRY=false

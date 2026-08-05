@@ -134,7 +134,12 @@ try:
 
     # ── Step 4: Select model ─────────────────────────────────────
     print("\n3. Selecting model...")
-    model_btns = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Select a model']")
+    # The aria-label is "Select a model" when none selected, or
+    # "Selected model: <name>" once a model is pinned.
+    model_btns = driver.find_elements(
+        By.CSS_SELECTOR,
+        "button[aria-label='Select a model'], button[aria-label^='Selected model']",
+    )
     selected = False
     if not model_btns:
         errors.append("No model selector button found")
@@ -264,9 +269,11 @@ try:
 
         # Filter out the user's own message, short metadata-only strings,
         # and anything that looks like a backend error body.
+        # Note: the threshold is low (3 chars) because E2E_CHAT_MESSAGE
+        # asks for a one-word response (e.g. "Hello!") which can be <10 chars.
         assistant_responses = [
             r for r in all_texts
-            if r.lower() != user_msg and len(r) > 10
+            if r.lower() != user_msg and len(r) > 3
             and "today at" not in r.lower()
             and not _has_error_marker(r)
         ]

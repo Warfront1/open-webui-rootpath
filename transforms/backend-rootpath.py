@@ -43,10 +43,18 @@ def transform_env_py(path):
 WEBUI_ROOT_PATH = os.environ.get('WEBUI_ROOT_PATH', '')
 """
 
-    content = content.replace(
+    anchor_patterns = (
         "WEBUI_BUILD_HASH = os.environ.get('WEBUI_BUILD_HASH', 'dev-build')",
-        "WEBUI_BUILD_HASH = os.environ.get('WEBUI_BUILD_HASH', 'dev-build')" + insertion
+        "WEBUI_BUILD_HASH = os.getenv('WEBUI_BUILD_HASH', 'dev-build')",
     )
+    anchored = False
+    for anchor in anchor_patterns:
+        if anchor in content:
+            content = content.replace(anchor, anchor + insertion)
+            anchored = True
+            break
+    if not anchored:
+        print(f"  [warn] {filepath} — could not find WEBUI_BUILD_HASH anchor; skipping")
 
     with open(filepath, 'w') as f:
         f.write(content)
@@ -62,10 +70,15 @@ def transform_main_py(path):
         print(f"  [skip] {filepath} — PathPrefixStripMiddleware already present")
         return
 
-    content = content.replace(
-        "    ENABLE_EASTER_EGGS,\n    LOG_FORMAT,",
-        "    ENABLE_EASTER_EGGS,\n    LOG_FORMAT,\n    WEBUI_ROOT_PATH,"
-    )
+    if "    WEBUI_ROOT_PATH,\n" not in content:
+        if "    LOG_FORMAT,\n" in content:
+            content = content.replace(
+                "    LOG_FORMAT,\n",
+                "    LOG_FORMAT,\n    WEBUI_ROOT_PATH,\n",
+                1,
+            )
+        else:
+            print(f"  [warn] {filepath} — could not find LOG_FORMAT import anchor; skipping import")
 
     content = content.replace(
         "        'version': VERSION,\n        'default_locale':",
