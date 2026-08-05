@@ -1,15 +1,18 @@
 diff --git a/src/lib/utils/google-drive-picker.ts b/src/lib/utils/google-drive-picker.ts
+index 64b7f37..137a1c7 100644
 --- a/src/lib/utils/google-drive-picker.ts
 +++ b/src/lib/utils/google-drive-picker.ts
-@@ -1,5 +1,7 @@
+@@ -1,10 +1,12 @@
 +import { WEBUI_BASE_URL } from '$lib/constants';
 +
  // Google Drive Picker API configuration
  let API_KEY = '';
  let CLIENT_ID = '';
  
-@@ -6,7 +8,7 @@
+ // Function to fetch credentials from backend config
  async function getCredentials() {
 -	const response = await fetch('/api/config');
 +	const response = await fetch(`${WEBUI_BASE_URL}/api/config`);
  	if (!response.ok) {
+ 		throw new Error('Failed to fetch Google Drive credentials');
+ 	}

@@ -86,20 +86,31 @@ try:
     print(f"   URL: {driver.current_url}")
     print(f"   Title: {driver.title}")
 
-    # ── Step 2: Dismiss modals ─────────────────────────────────────────────
-    print("\n2. Dismissing modals...")
-    for _ in range(5):
-        modals = driver.find_elements(By.CSS_SELECTOR, "[aria-modal='true']")
-        if not modals:
-            break
-        ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-        driver.execute_script(
-            'document.querySelectorAll("[aria-modal=\'true\']").forEach(function(m){m.remove();});'
-        )
-        time.sleep(1)
+    # ── Step 2: Verify the settings modal opened ──────────────────────────
+    print("\n2. Verifying admin settings modal is open...")
+    modals = driver.find_elements(By.CSS_SELECTOR, "[aria-modal='true']")
+    if not modals:
+        errors.append("No settings modal found after navigating to /admin/settings")
+        print("   FAIL: No modal found")
+    else:
+        print(f"   Found {len(modals)} modal(s)")
+        # The settings modal should contain admin tab buttons like
+        # "Authentication", "Connections", "Models", etc.
+        all_buttons = driver.find_elements(By.CSS_SELECTOR, "button")
+        admin_tab_keywords = ["Authentication", "Connections", "Models", "General"]
+        found_tabs = []
+        for btn in all_buttons:
+            txt = btn.text.strip()
+            for kw in admin_tab_keywords:
+                if txt == kw and kw not in found_tabs:
+                    found_tabs.append(kw)
+        print(f"   Admin tab buttons found: {found_tabs}")
+        if not found_tabs:
+            errors.append("Settings modal opened but no admin tab buttons found")
+            print("   FAIL: No admin tab buttons found in modal")
 
-    # ── Step 3: Check all anchor hrefs on the page ──────────────────────────
-    print("\n3. Checking all links on admin settings page...")
+    # ── Step 3: Check internal links on the page (inside modal + home) ────
+    print("\n3. Checking all internal links for root path prefix...")
     link_data = driver.execute_script("""
         var links = document.querySelectorAll('a[href]');
         var results = [];
@@ -131,25 +142,17 @@ try:
             print(f"     OK: {label} -> {href}")
 
     if bad_links:
-        errors.append(f"{len(bad_links)} internal links missing root path prefix on admin/settings")
+        errors.append(f"{len(bad_links)} internal links missing root path prefix")
         print(f"\n   FAIL: {len(bad_links)} links missing root path prefix:")
         for link in bad_links:
             print(f"     {link['text'] or link['ariaLabel']} -> {link['href']}")
     else:
         print("\n   PASS: All internal links include root path prefix")
 
-    # ── Step 4: Check for JS errors ────────────────────────────────────────
+    # ── Step 4: Check for JS errors / broken 404s ─────────────────────────
     print("\n4. Checking for JS errors...")
     logs = driver.get_log("browser")
     severe = [l for l in logs if "SEVERE" in l.get("level", "")]
-    unexpected_severe = [
-        l for l in severe
-        if "/ollama/api/version" not in l.get("message", "")
-        and "/favicon" not in l.get("message", "")
-        and "/static/favicon" not in l.get("message", "")
-        and "404" not in l.get("message", "").lower() or ROOT_PATH not in l.get("message", "")
-    ]
-    # 404s for paths WITH root path are expected (route may not exist or redirect)
     # 404s for paths WITHOUT root path are broken links
     broken_404s = [
         l for l in logs
@@ -161,18 +164,25 @@ try:
         and "/ws/" not in l.get("message", "")
     ]
     print(f"   Total severe JS errors: {len(severe)}")
-    print(f"   Unexpected severe errors: {len(unexpected_severe)}")
     print(f"   Broken 404s (missing root path): {len(broken_404s)}")
     for e in broken_404s[:5]:
         errors.append(f"Broken 404: {e['message'][:150]}")
         print(f"     {e['message'][:200]}")
 
-    # ── Step 5: Also check the admin/settings/general sub-page ──────────────
-    print("\n5. Loading admin/settings/general sub-page...")
-    driver.get(f"{BASE_HOST}{ROOT_PATH}/admin/settings/general")
-    time.sleep(5)
+    # ── Step 5: Navigate to a settings sub-tab via the modal ──────────────
+    print("\n5. Clicking 'Connections' tab in settings modal...")
+    clicked = False
+    for btn in driver.find_elements(By.CSS_SELECTOR, "button"):
+        if btn.text.strip() == "Connections" and btn.is_displayed():
+            driver.execute_script("arguments[0].click();", btn)
+            clicked = True
+            print("   Clicked 'Connections' tab")
+            break
+    if not clicked:
+        print("   WARNING: Could not find 'Connections' tab to click")
+    time.sleep(3)
 
-    # Check links on this sub-page too
+    # Re-check links after tab switch
     sub_link_data = driver.execute_script("""
         var links = document.querySelectorAll('a[href]');
         var results = [];
@@ -187,7 +197,7 @@ try:
         return results;
     """)
 
-    print(f"   Found {len(sub_link_data)} internal links on sub-page")
+    print(f"   Found {len(sub_link_data)} internal links after tab switch")
     sub_bad_links = []
     for link in sub_link_data:
         href = link['href']
@@ -199,10 +209,10 @@ try:
             print(f"     OK: {text} -> {href}")
 
     if sub_bad_links:
-        errors.append(f"{len(sub_bad_links)} links missing root path prefix on admin/settings/general")
-        print(f"\n   FAIL: {len(sub_bad_links)} links missing root path on sub-page")
+        errors.append(f"{len(sub_bad_links)} links missing root path prefix after tab switch")
+        print(f"\n   FAIL: {len(sub_bad_links)} links missing root path on sub-tab")
     else:
-        print("\n   PASS: All links on sub-page include root path")
+        print("\n   PASS: All links after tab switch include root path")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
