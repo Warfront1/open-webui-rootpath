@@ -12,6 +12,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY_VALUE}
       - DEFAULT_PINNED_MODELS=kimi-k2.6
       - DEFAULT_MODELS=kimi-k2.6
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,::1,nginx,open-webui}
+      - no_proxy=${no_proxy:-localhost,127.0.0.1,::1,nginx,open-webui}
+      - PROXY_CA_CERT_B64=${PROXY_CA_CERT_B64:-}
+    volumes:
+      - ./trust-sbx-proxy.sh:/tmp/trust-sbx-proxy.sh:ro
+    command: ["bash", "-c", "/tmp/trust-sbx-proxy.sh; exec bash start.sh"]
     networks:
       - backend
     restart: unless-stopped

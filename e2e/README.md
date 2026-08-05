@@ -56,6 +56,7 @@ stacks, running Selenium, executing all tests in both modes, and tearing down.
 | `E2E_MODEL_WAIT_TIMEOUT` | `8` | Seconds to wait for the target model to appear |
 | `E2E_CHAT_MESSAGE` | `Say hello in one word` | Message to send in the chat |
 | `E2E_RESPONSE_TIMEOUT` | `20` | Seconds to wait for the LLM response |
+| `E2E_ERROR_MARKERS` | `internal server error,unauthorized,forbidden,not found,connection refused,connection reset,401,403,404,500,502,503,error` | Comma-separated substrings that, if present in an assistant response bubble, mark the chat step as failed (case-insensitive). Override to narrow/extend the denylist. |
 
 ## Exit codes
 

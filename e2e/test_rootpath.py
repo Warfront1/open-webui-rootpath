@@ -38,6 +38,21 @@ CHAT_MESSAGE = os.environ.get("E2E_CHAT_MESSAGE", "Say hello in one word")
 RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "20"))
 SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", "/tmp/e2e-screenshots")
 
+ERROR_MARKERS = tuple(
+    m.strip().lower()
+    for m in os.environ.get(
+        "E2E_ERROR_MARKERS",
+        "internal server error,unauthorized,forbidden,not found,connection refused,connection reset,401,403,404,500,502,503,error",
+    ).split(",")
+    if m.strip()
+)
+
+
+def _has_error_marker(text):
+    lowered = text.lower()
+    return any(marker in lowered for marker in ERROR_MARKERS)
+
+
 opts = Options()
 opts.add_argument("--headless=new")
 opts.add_argument("--no-sandbox")
@@ -247,21 +262,23 @@ try:
         all_texts = responding.get("texts", []) if responding else []
         still_responding = responding.get("responding", False) if responding else False
 
-        # Filter out the user's own message and short metadata-only strings
+        # Filter out the user's own message, short metadata-only strings,
+        # and anything that looks like a backend error body.
         assistant_responses = [
             r for r in all_texts
             if r.lower() != user_msg and len(r) > 10
             and "today at" not in r.lower()
-            and "internal server error" not in r.lower()
+            and not _has_error_marker(r)
         ]
 
-        has_server_error = any(
-            "internal server error" in r.lower() for r in all_texts
-        )
+        has_server_error = any(_has_error_marker(r) for r in all_texts)
+        error_marker_hits = [r for r in all_texts if _has_error_marker(r)]
 
         print(f"   Still responding: {still_responding}")
         print(f"   Extracted {len(assistant_responses)} assistant responses")
         print(f"   Server error in response: {has_server_error}")
+        if error_marker_hits:
+            print(f"   Error marker hits: {error_marker_hits[:5]}")
         for r in all_texts[:5]:
             print(f"     raw: {r[:200]}")
 
@@ -269,8 +286,9 @@ try:
             print("\n   PASS: Assistant response received")
         else:
             if has_server_error:
-                errors.append("Internal Server Error in assistant response")
-                print("\n   FAIL: Internal Server Error in assistant response")
+                joined = "; ".join(r[:120] for r in error_marker_hits[:3])
+                errors.append(f"Server error marker in assistant response: {joined}")
+                print(f"\n   FAIL: Server error marker in assistant response: {joined}")
             else:
                 errors.append("No completed assistant response received (still spinning or empty)")
                 print("\n   FAIL: No completed assistant response received")

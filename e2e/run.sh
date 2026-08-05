@@ -11,6 +11,13 @@ PROJECT_NAME="e2e"
 mkdir -p "$SCREENSHOT_DIR"
 chmod 777 "$SCREENSHOT_DIR"
 
+# Inherit sbx proxy env vars so docker compose substitution picks them up.
+export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
+export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
+export NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}}"
+export http_proxy="$HTTP_PROXY" https_proxy="$HTTPS_PROXY" no_proxy="$NO_PROXY"
+export PROXY_CA_CERT_B64="${PROXY_CA_CERT_B64:-}"
+
 echo "=== E2E Test: Open WebUI Root Path ==="
 echo
 
