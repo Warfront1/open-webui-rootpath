@@ -104,8 +104,8 @@ def transform_main_py(path):
 
     # Import PathPrefixStripMiddleware alongside other middleware imports
     content = content.replace(
-        "from open_webui.utils.asgi_middleware import (\n    AuthTokenMiddleware,\n    CommitSessionMiddleware,\n    RedirectMiddleware,\n    WebsocketUpgradeGuardMiddleware,\n)",
-        "from open_webui.utils.asgi_middleware import (\n    AuthTokenMiddleware,\n    CommitSessionMiddleware,\n    RedirectMiddleware,\n    WebsocketUpgradeGuardMiddleware,\n)\nfrom open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
+        "from open_webui.utils.asgi_middleware import AppHTTPMiddleware",
+        "from open_webui.utils.asgi_middleware import AppHTTPMiddleware\nfrom open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
     )
 
     # Add PathPrefixStripMiddleware as outermost middleware (added last = runs first)
@@ -247,14 +247,14 @@ function getBasePath(): string {
 }
 """
 
-    content = content.replace(
-        "import { browser, dev } from '$app/environment';",
-        "import { browser, dev } from '$app/environment';\n" + getbasePath_fn
-    )
+    browser_import = "import { browser, dev } from '$app/environment';\n"
+
+    content = browser_import + getbasePath_fn + "\n" + content
 
     content = content.replace(
-        "export const WEBUI_BASE_URL = browser ? (dev ? `http://${WEBUI_HOSTNAME}` : ``) : ``;",
-        "export const WEBUI_BASE_URL = browser ? (dev ? `http://${WEBUI_HOSTNAME}` : getBasePath()) : getBasePath();"
+        "export const WEBUI_BASE_URL = '';",
+        "export const WEBUI_BASE_URL = browser ? (dev ? `http://${WEBUI_HOSTNAME}` : getBasePath()) : getBasePath();",
+        1,
     )
 
     with open(filepath, 'w') as f:
