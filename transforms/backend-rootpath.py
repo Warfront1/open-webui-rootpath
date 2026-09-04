@@ -391,6 +391,77 @@ def transform_models_py(path):
     print(f"  [done] {filepath}")
 
 
+def transform_auths_logout_redirect(path):
+    """Prefix getLogoutRedirectUrl()'s '/auth' URLs with the root path.
+
+    Upstream moved the post-signout redirect into a shared helper that builds
+    URLs with new URL('/auth...') — a plain .ts module the Svelte preprocessor
+    never sees, so it needs an explicit WEBUI_BASE_URL prefix here.
+    """
+    filepath = os.path.join(path, 'src/lib/apis/auths/index.ts')
+    if not os.path.exists(filepath):
+        print(f"  [skip] {filepath} — file does not exist")
+        return
+
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    if 'getLogoutRedirectUrl' not in content:
+        print(f"  [skip] {filepath} — getLogoutRedirectUrl not present")
+        return
+
+    if 'WEBUI_BASE_URL' in content:
+        print(f"  [skip] {filepath} — WEBUI_BASE_URL already present")
+        return
+
+    replacements = (
+        (
+            "const logoutUrl = new URL('/auth?state=logout', window.location.origin);",
+            "const logoutUrl = new URL(`${WEBUI_BASE_URL}/auth?state=logout`, window.location.origin);",
+        ),
+        (
+            "const postLogoutUrl = new URL('/auth', window.location.origin);",
+            "const postLogoutUrl = new URL(`${WEBUI_BASE_URL}/auth`, window.location.origin);",
+        ),
+        (
+            "if (url.origin === window.location.origin && url.pathname === '/auth') {",
+            "if (url.origin === window.location.origin && url.pathname === `${WEBUI_BASE_URL}/auth`) {",
+        ),
+        (
+            "configuredPostLogoutUrl.pathname === '/auth'",
+            "configuredPostLogoutUrl.pathname === `${WEBUI_BASE_URL}/auth`",
+        ),
+    )
+
+    replaced = 0
+    for old, new in replacements:
+        if old in content:
+            content = content.replace(old, new, 1)
+            replaced += 1
+        else:
+            print(f"  [warn] {filepath} — anchor not found: {old[:56]}...")
+
+    if replaced == 0:
+        print(f"  [warn] {filepath} — no anchors matched; file left unchanged")
+        return
+
+    # Extend the existing $lib/constants import with WEBUI_BASE_URL
+    import_match = re.search(r"import \{ ([^}]+) \} from '\$lib/constants';", content)
+    if import_match and 'WEBUI_BASE_URL' not in import_match.group(1):
+        names = import_match.group(1)
+        content = content.replace(
+            import_match.group(0),
+            f"import {{ {names}, WEBUI_BASE_URL }} from '$lib/constants';",
+            1,
+        )
+    elif not import_match:
+        print(f"  [warn] {filepath} — could not find $lib/constants import; skipping import")
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  [done] {filepath}")
+
+
 def main():
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} /path/to/upstream/clone [WEBUI_ROOT_PATH]")
@@ -409,6 +480,7 @@ def main():
     transform_constants_ts(clone_path)
     transform_arena_model_modal(clone_path)
     transform_layout_svelte(clone_path)
+    transform_auths_logout_redirect(clone_path)
     transform_app_html(clone_path, root_path)
 
     print("Done.")
