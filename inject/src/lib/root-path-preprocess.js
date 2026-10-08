@@ -4,6 +4,84 @@ function escapeRegex(string) {
   return string.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
 }
 
+// Masks the argument spans of helper calls that already prepend a base-prefixed
+// URL (e.g. terminalRequest(connection, chatId, `/api/terminals/...`) prepends
+// WEBUI_API_BASE_URL/terminals/<id>). The catch-all template-literal rule would
+// otherwise inject ${base} into those paths, producing double-prefixed URLs.
+// Call sites live in .svelte files only; plain .ts modules are never preprocessed.
+let callArgMaskSeq = 0;
+
+// start points at the opening char; returns the index just past the matching
+// close char, or -1 if unbalanced. Quote-aware (' " `).
+function skipBalanced(text, start, open, close) {
+  let depth = 0;
+  let inString = null;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === '\\') {
+        i++;
+      } else if (ch === inString) {
+        inString = null;
+      }
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      inString = ch;
+    } else if (ch === open) {
+      depth++;
+    } else if (ch === close && --depth === 0) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+export function makeCallArgMasker(helperNames) {
+  const masks = [];
+  const tokenBase = `__RPP_MASK_${callArgMaskSeq++}_`;
+
+  function mask(text) {
+    const spans = [];
+    for (const helperName of helperNames) {
+      const re = new RegExp(`\\b${helperName}\\b`, 'g');
+      let match;
+      while ((match = re.exec(text)) !== null) {
+        // Skip property accesses like x.terminalRequest(...)
+        if (match.index > 0 && /[\w$.]/.test(text[match.index - 1])) continue;
+        let j = match.index + match[0].length;
+        // Optional generic type params, e.g. terminalRequest<TerminalProcess[]>(...)
+        if (text[j] === '<') {
+          j = skipBalanced(text, j, '<', '>');
+          if (j === -1) continue;
+        }
+        if (text[j] !== '(') continue;
+        const end = skipBalanced(text, j, '(', ')');
+        if (end === -1) continue;
+        spans.push([j + 1, end - 1]); // span inside the parens, ')' excluded
+      }
+    }
+    let result = '';
+    let cursor = 0;
+    spans.forEach(([from, to], n) => {
+      const token = `${tokenBase}${n}__`;
+      result += text.slice(cursor, from) + token;
+      masks.push([token, text.slice(from, to)]);
+      cursor = to;
+    });
+    return result + text.slice(cursor);
+  }
+
+  function unmask(code) {
+    let out = code;
+    for (const [token, args] of masks) {
+      const at = out.indexOf(token);
+      if (at !== -1) out = out.slice(0, at) + args + out.slice(at + token.length);
+    }
+    return out;
+  }
+
+  return { mask, unmask };
+}
+
 export function rootPathPreprocess() {
   return {
     name: 'root-path-preprocess',
@@ -11,7 +89,8 @@ export function rootPathPreprocess() {
     script({ content, filename, attributes }) {
       if (!content) return;
 
-      let modified = content;
+      const argMasker = makeCallArgMasker(['terminalRequest']);
+      let modified = argMasker.mask(content);
       let needsBase = false;
       const isModuleScript = attributes && attributes.context === 'module';
 
@@ -168,7 +247,7 @@ export function rootPathPreprocess() {
 
       if (!needsBase) return undefined;
 
-      return { code: modified };
+      return { code: argMasker.unmask(modified) };
     },
 
     markup({ content, filename }) {
