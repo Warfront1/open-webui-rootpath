@@ -391,6 +391,39 @@ def transform_models_py(path):
     print(f"  [done] {filepath}")
 
 
+def transform_models_db_py(path):
+    """Make the v0.12.0 file-deletion guard root-path tolerant.
+
+    The frontend stores meta.background_image_url base-prefixed (the Svelte
+    preprocessor catch-all), so the get_model_owner_ids_by_file_id comparison
+    must include WEBUI_ROOT_PATH to match under a root path. At the root path
+    WEBUI_ROOT_PATH is '' and the comparison is identical to upstream's.
+    """
+    filepath = os.path.join(path, 'backend/open_webui/models/models.py')
+    if not os.path.exists(filepath):
+        print(f"  [skip] {filepath} — file does not exist")
+        return
+
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    anchor = "meta.get('background_image_url') == f'/api/v1/files/{file_id}/content'"
+    if "f'{WEBUI_ROOT_PATH}/api/v1/files/{file_id}/content'" in content:
+        print(f"  [skip] {filepath} — background_image_url comparison already prefixed")
+        return
+
+    if anchor in content:
+        content = content.replace(
+            anchor,
+            "meta.get('background_image_url') == f'{WEBUI_ROOT_PATH}/api/v1/files/{file_id}/content'",
+        )
+        with open(filepath, 'w') as f:
+            f.write(content)
+        print(f"  [done] {filepath}")
+    else:
+        print(f"  [warn] {filepath} — background_image_url comparison anchor not found")
+
+
 def transform_auths_logout_redirect(path):
     """Prefix getLogoutRedirectUrl()'s '/auth' URLs with the root path.
 
@@ -474,6 +507,7 @@ def main():
     transform_env_py(clone_path)
     transform_main_py(clone_path)
     transform_models_py(clone_path)
+    transform_models_db_py(clone_path)
     transform_asgi_middleware_py(clone_path)
     transform_svelte_config(clone_path)
     transform_vite_config(clone_path)

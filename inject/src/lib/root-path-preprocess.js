@@ -82,6 +82,52 @@ export function makeCallArgMasker(helperNames) {
   return { mask, unmask };
 }
 
+// Prefixes quoted root-relative strings ('/...' or "/...") with ${base} in a
+// markup expression snippet. Backtick spans are skipped wholesale: template
+// literals are handled by the catch-all rules, and quoted URL fragments that
+// live inside them (e.g. ${cond ? '/content' : ''} appended to an
+// already-prefixed URL) must not be prefixed. Returns null when unchanged.
+function prefixQuotedRootRelatives(code) {
+  let out = '';
+  let i = 0;
+  let changed = false;
+  while (i < code.length) {
+    const ch = code[i];
+    if (ch === '`') {
+      let j = i + 1;
+      while (j < code.length) {
+        if (code[j] === '\\') j++;
+        else if (code[j] === '`') break;
+        else j++;
+      }
+      out += code.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      const m = /^['"]\/[a-z][a-zA-Z0-9/._?&=%$-]*['"]/.exec(code.slice(i));
+      if (m) {
+        out += `\`\${base}${m[0].slice(1, -1)}\``;
+        changed = true;
+        i += m[0].length;
+        continue;
+      }
+      let j = i + 1;
+      while (j < code.length) {
+        if (code[j] === '\\') j++;
+        else if (code[j] === ch) break;
+        else j++;
+      }
+      out += code.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return changed ? out : null;
+}
+
 export function rootPathPreprocess() {
   return {
     name: 'root-path-preprocess',
@@ -377,6 +423,41 @@ export function rootPathPreprocess() {
           return `\`\${base}${pathStart}`;
         }
       );
+
+      // 11. Transform quoted root-relative strings inside markup expression
+      // regions — e.g. workspaceHref={admin ? '/admin/functions' : ''} — which
+      // the template-literal catch-all above cannot see. Script and style
+      // blocks are excluded (quoted strings there include non-URL values like
+      // command names and external-API hints), and ${...} substitution spans
+      // are never treated as regions, so URL fragments appended inside
+      // template literals (e.g. ${cond ? '/content' : ''}) are left alone.
+      {
+        const blanked = modified
+          .replace(/<script[\s\S]*?<\/script>/g, (m) => m.replace(/[^\n]/g, ' '))
+          .replace(/<style[\s\S]*?<\/style>/g, (m) => m.replace(/[^\n]/g, ' '));
+        const spans = [];
+        let idx = 0;
+        while (idx < blanked.length) {
+          if (blanked[idx] === '{' && blanked[idx - 1] !== '$') {
+            const end = skipBalanced(blanked, idx, '{', '}');
+            if (end !== -1) {
+              const inner = blanked.slice(idx + 1, end - 1);
+              const rewritten = prefixQuotedRootRelatives(inner);
+              if (rewritten !== null) {
+                spans.push([idx + 1, end - 1, rewritten]);
+                needsBase = true;
+              }
+              idx = end;
+              continue;
+            }
+          }
+          idx++;
+        }
+        for (let s = spans.length - 1; s >= 0; s--) {
+          const [from, to, code] = spans[s];
+          modified = modified.slice(0, from) + code + modified.slice(to);
+        }
+      }
 
       if (!needsBase) return undefined;
 

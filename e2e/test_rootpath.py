@@ -246,12 +246,24 @@ try:
         print(f"\n5. Waiting up to {RESPONSE_TIMEOUT}s for LLM response...")
         time.sleep(RESPONSE_TIMEOUT)
 
-        # Check for response completion indicator and extract assistant text
+        # Check for response completion indicator and extract assistant text.
+        # Spinners are scoped to the chat conversation section and must be
+        # visible: v0.12.0+ keeps a permanent "Loading..." spinner row at the
+        # end of the sidebar chat list (allLoaded only flips on an empty next
+        # page), which must not read as "still responding".
         responding = driver.execute_script("""
-            var spinners = document.querySelectorAll(
+            var scope = document.querySelector('section[aria-labelledby="chat-conversation"]') || document;
+            var spinners = scope.querySelectorAll(
                 '[class*="loading"], [class*="spinner"], [class*="streaming"]'
             );
-            var stillResponding = spinners.length > 0;
+            var visibleCount = 0;
+            for (var i = 0; i < spinners.length; i++) {
+                var s = spinners[i];
+                if (s.offsetWidth > 0 || s.offsetHeight > 0 || s.getClientRects().length > 0) {
+                    visibleCount++;
+                }
+            }
+            var stillResponding = visibleCount > 0;
             var markdownEls = document.querySelectorAll(
                 '.markdown, .prose, [class*="markdown"], [class*="prose"]'
             );
