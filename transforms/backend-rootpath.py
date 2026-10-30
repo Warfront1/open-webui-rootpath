@@ -424,6 +424,98 @@ def transform_models_db_py(path):
         print(f"  [warn] {filepath} — background_image_url comparison anchor not found")
 
 
+def transform_notes_py(path):
+    """Prefix rebuilt file links in the v0.12.5 notes migration with the root path.
+
+    migrate_page_files writes '[name](/api/v1/files/<id>/content)' into note
+    content.md, which NotePreview renders as a clickable link — root-relative,
+    it 404s behind the proxy. WEBUI_ROOT_PATH '' makes this byte-identical to
+    upstream's.
+    """
+    filepath = os.path.join(path, 'backend/open_webui/models/notes.py')
+    if not os.path.exists(filepath):
+        print(f"  [skip] {filepath} — file does not exist")
+        return
+
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    if 'WEBUI_ROOT_PATH' in content:
+        print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present")
+        return
+
+    content = content.replace(
+        "from open_webui.models.users import User, UserModel, UserResponse\n",
+        "from open_webui.models.users import User, UserModel, UserResponse\nfrom open_webui.env import WEBUI_ROOT_PATH\n",
+        1,
+    )
+
+    content = content.replace(
+        "href = f'/api/v1/files/{file[\"id\"]}/content'",
+        "href = f'{WEBUI_ROOT_PATH}/api/v1/files/{file[\"id\"]}/content'",
+    )
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  [done] {filepath}")
+
+
+def transform_markdown_note_links(path):
+    """Prefix in-app markdown note/chat link goto() calls with the base path.
+
+    MarkdownInlineTokens/NoteLinkToken intercept root-relative URLs built from
+    markdown hrefs (url.pathname.startsWith('/notes/' | '/c/' | '/channels/'))
+    and call goto(url.pathname + ...) — a variable-arg goto the Svelte
+    preprocessor cannot rewrite. SvelteKit requires base-prefixed goto paths,
+    so `${base}` is added. NoteEditor's equivalent goto uses $page.url (already
+    base-included) and must not be touched.
+    """
+    targets = (
+        'src/lib/components/chat/Messages/Markdown/MarkdownInlineTokens.svelte',
+        'src/lib/components/chat/Messages/Markdown/MarkdownInlineTokens/NoteLinkToken.svelte',
+    )
+    for rel in targets:
+        filepath = os.path.join(path, rel)
+        if not os.path.exists(filepath):
+            print(f"  [skip] {filepath} — file does not exist")
+            continue
+
+        with open(filepath, 'r') as f:
+            content = f.read()
+
+        if 'base}${url.pathname' in content:
+            print(f"  [skip] {filepath} — goto already base-prefixed")
+            continue
+
+        content, count = re.subn(
+            r'\bgoto\(\s*url\.pathname((?:\s*\+\s*url\.(?:search|hash))*)\s*\)',
+            lambda m: 'goto(`${base}${url.pathname}'
+            + ''.join(
+                '${' + part + '}'
+                for part in re.findall(r'url\.(?:search|hash)', m.group(1))
+            )
+            + '`)',
+            content,
+        )
+        if count == 0:
+            print(f"  [warn] {filepath} — goto(url.pathname...) anchor not found")
+            continue
+
+        if "import { base } from '$app/paths'" not in content:
+            if "import { goto } from '$app/navigation';" in content:
+                content = content.replace(
+                    "import { goto } from '$app/navigation';",
+                    "import { goto } from '$app/navigation';\nimport { base } from '$app/paths';",
+                    1,
+                )
+            else:
+                print(f"  [warn] {filepath} — could not find $app/navigation goto import; skipping import")
+
+        with open(filepath, 'w') as f:
+            f.write(content)
+        print(f"  [done] {filepath}")
+
+
 def transform_auths_logout_redirect(path):
     """Prefix getLogoutRedirectUrl()'s '/auth' URLs with the root path.
 
@@ -514,7 +606,9 @@ def main():
     transform_constants_ts(clone_path)
     transform_arena_model_modal(clone_path)
     transform_layout_svelte(clone_path)
+    transform_markdown_note_links(clone_path)
     transform_auths_logout_redirect(clone_path)
+    transform_notes_py(clone_path)
     transform_app_html(clone_path, root_path)
 
     print("Done.")
