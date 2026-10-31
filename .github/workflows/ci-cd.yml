@@ -12,6 +12,10 @@ env:
 
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ linux/amd64, linux/arm64 ]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -24,7 +28,7 @@ jobs:
         run: |
           UPSTREAM_VERSION=$(cat UPSTREAM_VERSION)
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform ${{ matrix.platform }} \
             --build-arg UPSTREAM_VERSION="${UPSTREAM_VERSION}" \
             -t "${DOCKER_REPO}:${UPSTREAM_VERSION}" \
             .
@@ -33,8 +37,18 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ linux/amd64, linux/arm64 ]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Prepare variables
+        run: |
+          platform="${{ matrix.platform }}"
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "UPSTREAM_VERSION=$(cat UPSTREAM_VERSION)" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
@@ -45,15 +59,53 @@ jobs:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Publish Docker Container
-        shell: bash
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            UPSTREAM_VERSION=${{ env.UPSTREAM_VERSION }}
+          outputs: type=image,name=${{ env.DOCKER_REPO }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
         run: |
-          UPSTREAM_VERSION=$(cat UPSTREAM_VERSION)
-          TAGS="-t ${DOCKER_REPO}:${UPSTREAM_VERSION}"
-          [ "${{ env.UPLOAD_LATEST }}" = "true" ] && TAGS="$TAGS -t ${DOCKER_REPO}:latest"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg UPSTREAM_VERSION="${UPSTREAM_VERSION}" \
-            $TAGS \
-            --push \
-            .
+          digest="${{ steps.build.outputs.digest }}"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-24.04
+    needs: publish
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          VERSION=$(cat "${GITHUB_WORKSPACE}/UPSTREAM_VERSION")
+          TAGS="-t ${DOCKER_REPO}:${VERSION}"
+          [ "${UPLOAD_LATEST}" = "true" ] && TAGS="$TAGS -t ${DOCKER_REPO}:latest"
+          docker buildx imagetools create $TAGS $(printf "${DOCKER_REPO}@sha256:%s " *)
+          docker buildx imagetools inspect "${DOCKER_REPO}:${VERSION}"
