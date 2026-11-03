@@ -22,6 +22,15 @@ def insert_import_after_future(content, import_line):
     return import_line + '\n' + content
 
 
+def must_replace(content, filepath, anchor, old, new, count=None):
+    """str.replace that logs [warn] instead of silently no-op'ing when the anchor moved upstream."""
+    replaced = content.replace(old, new) if count is None else content.replace(old, new, count)
+    if replaced == content:
+        print(f"  [warn] {filepath} — could not find {anchor} anchor; skipping")
+        return content, False
+    return replaced, True
+
+
 def transform_env_py(path):
     filepath = os.path.join(path, 'backend/open_webui/env.py')
     with open(filepath, 'r') as f:
@@ -80,63 +89,71 @@ def transform_main_py(path):
         else:
             print(f"  [warn] {filepath} — could not find LOG_FORMAT import anchor; skipping import")
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "app manifest",
         "        'version': VERSION,\n        'default_locale':",
-        "        'version': VERSION,\n        'root_path': WEBUI_ROOT_PATH,\n        'default_locale':"
+        "        'version': VERSION,\n        'root_path': WEBUI_ROOT_PATH,\n        'default_locale':",
     )
 
-    content = content.replace("'start_url': '/'", "'start_url': f'{WEBUI_ROOT_PATH}/'")
-    content = content.replace("'src': '/static/logo.png'", "'src': f'{WEBUI_ROOT_PATH}/static/logo.png'")
-    content = content.replace("'action': '/'", "'action': f'{WEBUI_ROOT_PATH}/'")
+    content, _ = must_replace(
+        content, filepath, "manifest start_url", "'start_url': '/'", "'start_url': f'{WEBUI_ROOT_PATH}/'"
+    )
+    content, _ = must_replace(
+        content,
+        filepath,
+        "manifest logo src",
+        "'src': '/static/logo.png'",
+        "'src': f'{WEBUI_ROOT_PATH}/static/logo.png'",
+    )
+    content, _ = must_replace(
+        content, filepath, "manifest action", "'action': '/'", "'action': f'{WEBUI_ROOT_PATH}/'"
+    )
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "swagger js url",
         "swagger_js_url='/static/swagger-ui/swagger-ui-bundle.js'",
-        "swagger_js_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/swagger-ui-bundle.js'"
+        "swagger_js_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/swagger-ui-bundle.js'",
     )
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "swagger css url",
         "swagger_css_url='/static/swagger-ui/swagger-ui.css'",
-        "swagger_css_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/swagger-ui.css'"
+        "swagger_css_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/swagger-ui.css'",
     )
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "swagger favicon url",
         "swagger_favicon_url='/static/swagger-ui/favicon.png'",
-        "swagger_favicon_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/favicon.png'"
+        "swagger_favicon_url=f'{WEBUI_ROOT_PATH}/static/swagger-ui/favicon.png'",
     )
 
-    # Import PathPrefixStripMiddleware alongside other middleware imports
-    content = content.replace(
-        "from open_webui.utils.asgi_middleware import AppHTTPMiddleware",
-        "from open_webui.utils.asgi_middleware import AppHTTPMiddleware\nfrom open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
+    # Import PathPrefixStripMiddleware at the top of the module (after any
+    # docstring); anchoring on an upstream import line breaks whenever upstream
+    # reshuffles its imports (e.g. v0.13.0 added BrowserCORSMiddleware).
+    content = insert_import_after_future(
+        content, "from open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
     )
 
-    # Add PathPrefixStripMiddleware as outermost middleware (added last = runs first)
-    content = content.replace(
-        "app.add_middleware(\n    CORSMiddleware,\n    allow_origins=CORS_ALLOW_ORIGIN,\n    allow_credentials=True,\n    allow_methods=['*'],\n    allow_headers=['*'],\n)",
-        "app.add_middleware(\n    CORSMiddleware,\n    allow_origins=CORS_ALLOW_ORIGIN,\n    allow_credentials=True,\n    allow_methods=['*'],\n    allow_headers=['*'],\n)\n\n# PathPrefixStripMiddleware must be added last so it runs first (outermost),\n# stripping WEBUI_ROOT_PATH from incoming request paths before any other\n# middleware or FastAPI routing processes them.\napp.add_middleware(PathPrefixStripMiddleware)"
-    )
-
-    with open(filepath, 'w') as f:
-        f.write(content)
-    print(f"  [done] {filepath}")
-
-
-def transform_asgi_middleware_py(path):
-    filepath = os.path.join(path, 'backend/open_webui/utils/asgi_middleware.py')
-    if not os.path.exists(filepath):
-        print(f"  [skip] {filepath} — file does not exist (redirect middleware still in main.py)")
-        return
-
-    with open(filepath, 'r') as f:
-        content = f.read()
-
-    if 'WEBUI_ROOT_PATH' in content:
-        print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present")
-        return
-
-    content = insert_import_after_future(content, "from open_webui.env import WEBUI_ROOT_PATH")
-
-    content = content.replace(
-        "redirect_url = f'/?{urlencode(redirect_params)}'",
-        "redirect_url = f'{WEBUI_ROOT_PATH}/?{urlencode(redirect_params)}'"
+    # Add PathPrefixStripMiddleware as outermost middleware (added last = runs
+    # first). Anchored on the '/ws' mount — placed after the CORS middleware so
+    # the strip runs outside it, and stable against CORS refactors.
+    ws_mount = "app.mount('/ws', socket_app)"
+    content, _ = must_replace(
+        content,
+        filepath,
+        "'/ws' mount",
+        ws_mount,
+        ws_mount
+        + "\n\n# PathPrefixStripMiddleware must be added last so it runs first (outermost),\n"
+        + "# stripping WEBUI_ROOT_PATH from incoming request paths before any other\n"
+        + "# middleware or FastAPI routing processes them.\n"
+        + "app.add_middleware(PathPrefixStripMiddleware)",
     )
 
     with open(filepath, 'w') as f:
@@ -158,40 +175,65 @@ def transform_svelte_config(path):
         return
 
     # 1. Add rootPathPreprocess import
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "vitePreprocess import",
         "import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';",
-        "import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';\nimport { rootPathPreprocess } from './src/lib/root-path-preprocess.js';"
+        "import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';\nimport { rootPathPreprocess } from './src/lib/root-path-preprocess.js';",
     )
 
     # 2. Add rootPathPreprocess to preprocess — handle both array and non-array forms
     #    Upstream v0.9.2 uses: preprocess: vitePreprocess()      (non-array)
     #    Some versions use:     preprocess: [vitePreprocess()]    (array)
     if 'preprocess: [rootPathPreprocess()' not in content:
-        content = content.replace(
+        content, applied = must_replace(
+            content,
+            filepath,
+            "preprocess array",
             "preprocess: [vitePreprocess()]",
-            "preprocess: [rootPathPreprocess(), vitePreprocess()]"
+            "preprocess: [rootPathPreprocess(), vitePreprocess()]",
         )
-    preprocess_line = content.split('preprocess')[1].split('\n')[0] if 'preprocess' in content else ''
-    if 'rootPathPreprocess' not in preprocess_line:
-        content = content.replace(
-            "preprocess: vitePreprocess()",
-            "preprocess: [rootPathPreprocess(), vitePreprocess()]"
+        if not applied:
+            content, _ = must_replace(
+                content,
+                filepath,
+                "preprocess non-array",
+                "preprocess: vitePreprocess()",
+                "preprocess: [rootPathPreprocess(), vitePreprocess()]",
+            )
+    if 'preprocess: [rootPathPreprocess()' not in content:
+        content = re.sub(
+            r'preprocess:[ \t]*vitePreprocess\(\)',
+            'preprocess: [rootPathPreprocess(), vitePreprocess()]',
+            content,
+            count=1,
         )
+    if 'preprocess: [rootPathPreprocess()' not in content:
+        print(f"  [warn] {filepath} — could not find preprocess anchor; pipeline not extended")
 
     # 3. Add WEBUI_BASE_PATH constant before the config object
     if 'WEBUI_BASE_PATH' not in content:
-        content = content.replace(
+        content, _ = must_replace(
+            content,
+            filepath,
+            "config type comment",
             "/** @type {import('@sveltejs/kit').Config} */",
-            "const WEBUI_BASE_PATH = process.env.WEBUI_ROOT_PATH || '';\n\n/** @type {import('@sveltejs/kit').Config} */"
+            "const WEBUI_BASE_PATH = process.env.WEBUI_ROOT_PATH || '';\n\n/** @type {import('@sveltejs/kit').Config} */",
         )
 
     # 4. Add paths.base config after adapter fallback
     #    fallback is indented with 3 tabs (inside adapter({)), closing }), with 2 tabs
     if 'paths:' not in content:
-        content = content.replace(
+        content, _ = must_replace(
+            content,
+            filepath,
+            "adapter fallback",
             "\t\t\tfallback: 'index.html'\n\t\t}),",
-            "\t\t\tfallback: 'index.html'\n\t\t}),\n\t\tpaths: {\n\t\t\tbase: WEBUI_BASE_PATH\n\t\t},"
+            "\t\t\tfallback: 'index.html'\n\t\t}),\n\t\tpaths: {\n\t\t\tbase: WEBUI_BASE_PATH\n\t\t},",
         )
+    if 'paths:' not in content:
+        print(f"  [warn] {filepath} — could not find paths config anchor; paths.base not added")
 
     with open(filepath, 'w') as f:
         f.write(content)
@@ -211,9 +253,12 @@ def transform_vite_config(path):
         print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present")
         return
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "viteStaticCopy import",
         "import { viteStaticCopy } from 'vite-plugin-static-copy';",
-        "import { viteStaticCopy } from 'vite-plugin-static-copy';\n\nconst WEBUI_BASE_PATH = process.env.WEBUI_ROOT_PATH || '';"
+        "import { viteStaticCopy } from 'vite-plugin-static-copy';\n\nconst WEBUI_BASE_PATH = process.env.WEBUI_ROOT_PATH || '';",
     )
 
     with open(filepath, 'w') as f:
@@ -251,10 +296,13 @@ function getBasePath(): string {
 
     content = browser_import + getbasePath_fn + "\n" + content
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "WEBUI_BASE_URL declaration",
         "export const WEBUI_BASE_URL = '';",
         "export const WEBUI_BASE_URL = browser ? (dev ? `http://${WEBUI_HOSTNAME}` : getBasePath()) : getBasePath();",
-        1,
+        count=1,
     )
 
     with open(filepath, 'w') as f:
@@ -355,42 +403,6 @@ def transform_arena_model_modal(path):
     print(f"  [done] {filepath}")
 
 
-def transform_models_py(path):
-    filepath = os.path.join(path, 'backend/open_webui/routers/models.py')
-    if not os.path.exists(filepath):
-        print(f"  [skip] {filepath} — file does not exist")
-        return
-
-    with open(filepath, 'r') as f:
-        content = f.read()
-
-    if "f'{WEBUI_ROOT_PATH}/static/favicon.png'" in content:
-        print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present in models.py")
-        return
-
-    # Add import
-    content = content.replace(
-        "from open_webui.utils.auth import get_admin_user, get_verified_user",
-        "from open_webui.utils.auth import get_admin_user, get_verified_user\nfrom open_webui.env import WEBUI_ROOT_PATH",
-    )
-
-    # Prefix safe_static_redirect_path return value with WEBUI_ROOT_PATH
-    content = content.replace(
-        "    return normalized\n",
-        "    return f'{WEBUI_ROOT_PATH}{normalized}'\n",
-    )
-
-    # Prefix fallback favicon redirect
-    content = content.replace(
-        "    return RedirectResponse(\n        url='/static/favicon.png',\n        status_code=status.HTTP_302_FOUND,\n    )",
-        "    return RedirectResponse(\n        url=f'{WEBUI_ROOT_PATH}/static/favicon.png',\n        status_code=status.HTTP_302_FOUND,\n    )",
-    )
-
-    with open(filepath, 'w') as f:
-        f.write(content)
-    print(f"  [done] {filepath}")
-
-
 def transform_models_db_py(path):
     """Make the v0.12.0 file-deletion guard root-path tolerant.
 
@@ -444,13 +456,19 @@ def transform_notes_py(path):
         print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present")
         return
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "users import",
         "from open_webui.models.users import User, UserModel, UserResponse\n",
         "from open_webui.models.users import User, UserModel, UserResponse\nfrom open_webui.env import WEBUI_ROOT_PATH\n",
-        1,
+        count=1,
     )
 
-    content = content.replace(
+    content, _ = must_replace(
+        content,
+        filepath,
+        "notes file href",
         "href = f'/api/v1/files/{file[\"id\"]}/content'",
         "href = f'{WEBUI_ROOT_PATH}/api/v1/files/{file[\"id\"]}/content'",
     )
@@ -587,6 +605,50 @@ def transform_auths_logout_redirect(path):
     print(f"  [done] {filepath}")
 
 
+def transform_terminals_py(path):
+    """Prefix the v0.13.0 terminal port-proxy Location and in-page rewrite prefix.
+
+    routers/terminals.py rebuilds client-facing redirect Location headers from
+    request.url.path, which PathPrefixStripMiddleware has already stripped of
+    WEBUI_ROOT_PATH. The same port_prefix value feeds _port_browser_html's
+    in-page link/fetch rewriter (config.prefix), so prefixing the port_prefix
+    computation keeps both consistent. WEBUI_ROOT_PATH '' makes this
+    byte-identical to upstream's.
+    """
+    filepath = os.path.join(path, 'backend/open_webui/routers/terminals.py')
+    if not os.path.exists(filepath):
+        print(f"  [skip] {filepath} — file does not exist")
+        return
+
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    if 'WEBUI_ROOT_PATH' in content:
+        print(f"  [skip] {filepath} — WEBUI_ROOT_PATH already present")
+        return
+
+    port_anchor = "port_prefix = request.url.path[: request.url.path.index('/proxy/') + len(port_match[0]) + 1]"
+    if port_anchor not in content:
+        print(f"  [skip] {filepath} — terminal port-proxy Location rebuild not present")
+        return
+
+    env_import = "from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL, ENABLE_TOOL_SERVERS"
+    if env_import in content:
+        content = content.replace(env_import, env_import + ", WEBUI_ROOT_PATH", 1)
+    else:
+        print(f"  [warn] {filepath} — could not find open_webui.env import anchor; skipping import")
+
+    content = content.replace(
+        port_anchor,
+        "port_prefix = f'{WEBUI_ROOT_PATH}' + request.url.path[: request.url.path.index('/proxy/') + len(port_match[0]) + 1]",
+        1,
+    )
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  [done] {filepath}")
+
+
 def main():
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} /path/to/upstream/clone [WEBUI_ROOT_PATH]")
@@ -598,9 +660,7 @@ def main():
 
     transform_env_py(clone_path)
     transform_main_py(clone_path)
-    transform_models_py(clone_path)
     transform_models_db_py(clone_path)
-    transform_asgi_middleware_py(clone_path)
     transform_svelte_config(clone_path)
     transform_vite_config(clone_path)
     transform_constants_ts(clone_path)
@@ -609,6 +669,7 @@ def main():
     transform_markdown_note_links(clone_path)
     transform_auths_logout_redirect(clone_path)
     transform_notes_py(clone_path)
+    transform_terminals_py(clone_path)
     transform_app_html(clone_path, root_path)
 
     print("Done.")
