@@ -4,9 +4,11 @@ function escapeRegex(string) {
   return string.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
 }
 
-// Masks the argument spans of helper calls that already prepend a base-prefixed
-// URL (e.g. terminalRequest(connection, chatId, `/api/terminals/...`) prepends
-// WEBUI_API_BASE_URL/terminals/<id>). The catch-all template-literal rule would
+// Masks the argument spans of helper calls that combine a root-path-aware base
+// (e.g. WEBUI_API_BASE_URL-based connection.baseUrl) with a path suffix:
+// terminalRequest(connection, chatId, `/api/terminals/...`) fetches
+// `${connection.baseUrl}${path}`, openTerminalSocket/readTerminalStream build
+// WebSocket URLs the same way. The catch-all template-literal rule would
 // otherwise inject ${base} into those paths, producing double-prefixed URLs.
 // Call sites live in .svelte files only; plain .ts modules are never preprocessed.
 let callArgMaskSeq = 0;
@@ -58,6 +60,9 @@ export function makeCallArgMasker(helperNames) {
         if (end === -1) continue;
         spans.push([j + 1, end - 1]); // span inside the parens, ')' excluded
       }
+      // Helpers are scanned independently, so spans may be found out of order;
+      // stitching below walks spans in text order.
+      spans.sort((a, b) => a[0] - b[0]);
     }
     let result = '';
     let cursor = 0;
@@ -135,7 +140,7 @@ export function rootPathPreprocess() {
     script({ content, filename, attributes }) {
       if (!content) return;
 
-      const argMasker = makeCallArgMasker(['terminalRequest']);
+      const argMasker = makeCallArgMasker(['terminalRequest', 'openTerminalSocket', 'readTerminalStream']);
       let modified = argMasker.mask(content);
       let needsBase = false;
       const isModuleScript = attributes && attributes.context === 'module';
@@ -416,13 +421,22 @@ export function rootPathPreprocess() {
       // and href={...`/path/...`...}, ternary expressions in Svelte markup
       // Must run BEFORE the needsBase check so files with only template-literal
       // paths (no href="/..." or goto('/...')) are still transformed.
-      modified = modified.replace(
-        /\x60(\/[a-z])/g,
-        (match, pathStart) => {
-          needsBase = true;
-          return `\`\${base}${pathStart}`;
-        }
-      );
+      // Skips <script>/<style> regions: Svelte runs the markup hook before the
+      // script hook, and script bodies are already handled there (with call-arg
+      // masking); injecting here would double-prefix masked helper spans.
+      {
+        const blanked = modified
+          .replace(/<script[\s\S]*?<\/script>/g, (m) => m.replace(/[^\n]/g, ' '))
+          .replace(/<style[\s\S]*?<\/style>/g, (m) => m.replace(/[^\n]/g, ' '));
+        modified = modified.replace(
+          /\x60(\/[a-z])/g,
+          (match, pathStart, offset) => {
+            if (blanked[offset] !== modified[offset]) return match;
+            needsBase = true;
+            return `\`\${base}${pathStart}`;
+          }
+        );
+      }
 
       // 11. Transform quoted root-relative strings inside markup expression
       // regions — e.g. workspaceHref={admin ? '/admin/functions' : ''} — which
