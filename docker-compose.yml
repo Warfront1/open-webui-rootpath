@@ -6,15 +6,15 @@ services:
       context: .
       args:
         # Read from UPSTREAM_VERSION file: UPSTREAM_VERSION=$(cat UPSTREAM_VERSION) docker compose build
-        UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.13.0}
+        UPSTREAM_VERSION: ${UPSTREAM_VERSION:-v0.13.2}
     environment:
       - WEBUI_ROOT_PATH=/openwebui
       - ENABLE_PERSISTENT_CONFIG=False
       - WEBUI_AUTH=false
       - OPENAI_API_BASE_URL=https://ollama.com/v1
       - OPENAI_API_KEY=${OPENAI_API_KEY_VALUE}
-      - DEFAULT_PINNED_MODELS=kimi-k2.6
-      - DEFAULT_MODELS=kimi-k2.6
+      - DEFAULT_PINNED_MODELS=mimo-v2.6-pro
+      - DEFAULT_MODELS=mimo-v2.6-pro
 #      - ENABLE_OPENAI_API_PASSTHROUGH=true
 #    volumes:
 #      - open-webui-data:/app/backend/data
