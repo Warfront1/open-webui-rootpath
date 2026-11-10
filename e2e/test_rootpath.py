@@ -32,7 +32,7 @@ verify_routing_mode()
 # URL must use the Docker network hostname (nginx service name) and the root path prefix
 ROOT_PATH = os.environ.get("E2E_ROOT_PATH", "/openwebui")
 BASE_URL = os.environ.get("E2E_BASE_URL", f"http://nginx:80{ROOT_PATH}/")
-MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "minimax-m2")
+MODEL_KEYWORD = os.environ.get("E2E_MODEL_KEYWORD", "kimi-k2.6")
 MODEL_WAIT_TIMEOUT = int(os.environ.get("E2E_MODEL_WAIT_TIMEOUT", "8"))
 CHAT_MESSAGE = os.environ.get("E2E_CHAT_MESSAGE", "Say hello in one word")
 RESPONSE_TIMEOUT = int(os.environ.get("E2E_RESPONSE_TIMEOUT", "20"))
