@@ -478,6 +478,74 @@ def transform_notes_py(path):
     print(f"  [done] {filepath}")
 
 
+def transform_chat_home_route(path):
+    """Root-path-match the v0.13.4 layout-level chat home route.
+
+    v0.13.4 moved the chat UI into a layout-level Chat.svelte whose
+    followRoute() keys home-page initialization on the quoted comparison
+    '$page.url.pathname === '/'' — a shape the Svelte preprocessor
+    intentionally leaves alone because quoted strings in script regions are
+    usually API-path composition fragments. Under a root path the pathname is
+    base-prefixed, so followRoute() matched nothing: initNewChat() never ran,
+    the chat pane stayed on its spinner, and the model selector never mounted.
+
+    initNewChat's mainChatHref home value (consumed by the Tabs address-bar
+    sync) and the temporary-chat toggle's goto('/' + search) compose
+    root-relative URLs the same way, so both are built with `${base}` here.
+    WEBUI_ROOT_PATH '' makes these byte-identical to upstream's at the root.
+    """
+    filepath = os.path.join(path, 'src/lib/components/chat/Chat.svelte')
+    if not os.path.exists(filepath):
+        print(f"  [skip] {filepath} — file does not exist")
+        return
+
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    if '${base}/`' in content:
+        print(f"  [skip] {filepath} — home route already base-matched")
+        return
+
+    if "import { base } from '$app/paths'" not in content:
+        content, _ = must_replace(
+            content,
+            filepath,
+            "$app/navigation import",
+            "import { goto, beforeNavigate, afterNavigate } from '$app/navigation';",
+            "import { goto, beforeNavigate, afterNavigate } from '$app/navigation';\n"
+            "import { base } from '$app/paths';",
+            count=1,
+        )
+
+    content, _ = must_replace(
+        content,
+        filepath,
+        "followRoute home check",
+        "$page.params.folderId || $page.url.pathname === '/'",
+        "$page.params.folderId || $page.url.pathname === `${base}/`",
+    )
+
+    content, _ = must_replace(
+        content,
+        filepath,
+        "mainChatHref home init",
+        "mainChatHref = '/';\n\t\tif (url?.pathname === '/') {",
+        "mainChatHref = `${base}/`;\n\t\tif (url?.pathname === `${base}/`) {",
+    )
+
+    content, _ = must_replace(
+        content,
+        filepath,
+        "temporary-chat toggle goto",
+        "goto(`/${search}`)",
+        "goto(`${base}/${search}`)",
+    )
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  [done] {filepath}")
+
+
 def transform_markdown_note_links(path):
     """Prefix in-app markdown note/chat link goto() calls with the base path.
 
@@ -666,6 +734,7 @@ def main():
     transform_constants_ts(clone_path)
     transform_arena_model_modal(clone_path)
     transform_layout_svelte(clone_path)
+    transform_chat_home_route(clone_path)
     transform_markdown_note_links(clone_path)
     transform_auths_logout_redirect(clone_path)
     transform_notes_py(clone_path)

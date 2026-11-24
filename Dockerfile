@@ -51,6 +51,7 @@ ARG WEBUI_ROOT_PATH
 WORKDIR /app
 
 COPY --from=prepare /upstream/package.json /upstream/package-lock.json ./
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 RUN npm ci --force
 
 COPY --from=prepare /upstream/ .
