@@ -5,12 +5,12 @@ function escapeRegex(string) {
 }
 
 // Masks the argument spans of helper calls that combine a root-path-aware base
-// (e.g. WEBUI_API_BASE_URL-based connection.baseUrl) with a path suffix:
-// terminalRequest(connection, chatId, `/api/terminals/...`) fetches
-// `${connection.baseUrl}${path}`, openTerminalSocket/readTerminalStream build
-// WebSocket URLs the same way. The catch-all template-literal rule would
-// otherwise inject ${base} into those paths, producing double-prefixed URLs.
-// Call sites live in .svelte files only; plain .ts modules are never preprocessed.
+// (e.g. WEBUI_API_BASE_URL-based target.baseUrl) with a path suffix: the
+// helper fetches, streams, or opens sockets with `${target.baseUrl}${path}`.
+// The catch-all template-literal rule would otherwise inject ${base} into
+// those paths, producing double-prefixed URLs. Stale names after upstream
+// renames simply never match. Call sites live in .svelte files only; plain
+// .ts modules are never preprocessed.
 let callArgMaskSeq = 0;
 
 // start points at the opening char; returns the index just past the matching
@@ -140,7 +140,13 @@ export function rootPathPreprocess() {
     script({ content, filename, attributes }) {
       if (!content) return;
 
-      const argMasker = makeCallArgMasker(['terminalRequest', 'openTerminalSocket', 'readTerminalStream']);
+      const argMasker = makeCallArgMasker([
+        'terminalRequest',
+        'openTerminalSocket',
+        'machineRequest',
+        'openMachineSocket',
+        'readTerminalStream'
+      ]);
       let modified = argMasker.mask(content);
       let needsBase = false;
       const isModuleScript = attributes && attributes.context === 'module';

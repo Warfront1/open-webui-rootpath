@@ -135,7 +135,7 @@ def transform_main_py(path):
 
     # Import PathPrefixStripMiddleware at the top of the module (after any
     # docstring); anchoring on an upstream import line breaks whenever upstream
-    # reshuffles its imports (e.g. v0.13.0 added BrowserCORSMiddleware).
+    # reshuffles its imports.
     content = insert_import_after_future(
         content, "from open_webui.utils.path_prefix_middleware import PathPrefixStripMiddleware"
     )
@@ -184,8 +184,7 @@ def transform_svelte_config(path):
     )
 
     # 2. Add rootPathPreprocess to preprocess — handle both array and non-array forms
-    #    Upstream v0.9.2 uses: preprocess: vitePreprocess()      (non-array)
-    #    Some versions use:     preprocess: [vitePreprocess()]    (array)
+    #    Upstream may use: preprocess: [vitePreprocess()] or preprocess: vitePreprocess()
     if 'preprocess: [rootPathPreprocess()' not in content:
         content, applied = must_replace(
             content,
@@ -404,12 +403,14 @@ def transform_arena_model_modal(path):
 
 
 def transform_models_db_py(path):
-    """Make the v0.12.0 file-deletion guard root-path tolerant.
+    """Root-path-tolerate the model file-deletion guard.
 
-    The frontend stores meta.background_image_url base-prefixed (the Svelte
-    preprocessor catch-all), so the get_model_owner_ids_by_file_id comparison
-    must include WEBUI_ROOT_PATH to match under a root path. At the root path
-    WEBUI_ROOT_PATH is '' and the comparison is identical to upstream's.
+    The frontend stores meta background/profile image file URLs base-prefixed
+    (the Svelte preprocessor catch-all), so the get_model_owner_ids_by_file_id
+    comparison literal must include WEBUI_ROOT_PATH to match under a root
+    path. models.py does not import open_webui.env, so the import is added
+    alongside the anchor replacement. WEBUI_ROOT_PATH '' makes this
+    byte-identical to upstream's at the root.
     """
     filepath = os.path.join(path, 'backend/open_webui/models/models.py')
     if not os.path.exists(filepath):
@@ -419,25 +420,32 @@ def transform_models_db_py(path):
     with open(filepath, 'r') as f:
         content = f.read()
 
-    anchor = "meta.get('background_image_url') == f'/api/v1/files/{file_id}/content'"
     if "f'{WEBUI_ROOT_PATH}/api/v1/files/{file_id}/content'" in content:
         print(f"  [skip] {filepath} — background_image_url comparison already prefixed")
         return
 
-    if anchor in content:
-        content = content.replace(
-            anchor,
-            "meta.get('background_image_url') == f'{WEBUI_ROOT_PATH}/api/v1/files/{file_id}/content'",
+    anchor = (
+        "                        f'/api/v1/files/{file_id}/content'\n"
+        "                        in (meta.get('background_image_url'), meta.get('profile_image_url'))"
+    )
+    replaced = (
+        "                        f'{WEBUI_ROOT_PATH}/api/v1/files/{file_id}/content'\n"
+        "                        in (meta.get('background_image_url'), meta.get('profile_image_url'))"
+    )
+    content, _ = must_replace(content, filepath, "deletion guard", anchor, replaced)
+
+    if 'from open_webui.env import WEBUI_ROOT_PATH' not in content:
+        content = insert_import_after_future(
+            content, 'from open_webui.env import WEBUI_ROOT_PATH'
         )
-        with open(filepath, 'w') as f:
-            f.write(content)
-        print(f"  [done] {filepath}")
-    else:
-        print(f"  [warn] {filepath} — background_image_url comparison anchor not found")
+
+    with open(filepath, 'w') as f:
+        f.write(content)
+    print(f"  [done] {filepath}")
 
 
 def transform_notes_py(path):
-    """Prefix rebuilt file links in the v0.12.5 notes migration with the root path.
+    """Prefix rebuilt file links in the notes migration with the root path.
 
     migrate_page_files writes '[name](/api/v1/files/<id>/content)' into note
     content.md, which NotePreview renders as a clickable link — root-relative,
@@ -479,10 +487,10 @@ def transform_notes_py(path):
 
 
 def transform_chat_home_route(path):
-    """Root-path-match the v0.13.4 layout-level chat home route.
+    """Root-path-match the layout-level chat home route.
 
-    v0.13.4 moved the chat UI into a layout-level Chat.svelte whose
-    followRoute() keys home-page initialization on the quoted comparison
+    The layout-level Chat.svelte's followRoute() keys home-page initialization
+    on the quoted comparison
     '$page.url.pathname === '/'' — a shape the Svelte preprocessor
     intentionally leaves alone because quoted strings in script regions are
     usually API-path composition fragments. Under a root path the pathname is
@@ -674,16 +682,16 @@ def transform_auths_logout_redirect(path):
 
 
 def transform_terminals_py(path):
-    """Prefix the v0.13.0 terminal port-proxy Location and in-page rewrite prefix.
+    """Prefix the machines port-proxy Location and in-page rewrite prefix.
 
-    routers/terminals.py rebuilds client-facing redirect Location headers from
+    routers/machines.py rebuilds client-facing redirect Location headers from
     request.url.path, which PathPrefixStripMiddleware has already stripped of
     WEBUI_ROOT_PATH. The same port_prefix value feeds _port_browser_html's
     in-page link/fetch rewriter (config.prefix), so prefixing the port_prefix
     computation keeps both consistent. WEBUI_ROOT_PATH '' makes this
-    byte-identical to upstream's.
+    byte-identical to upstream's at the root.
     """
-    filepath = os.path.join(path, 'backend/open_webui/routers/terminals.py')
+    filepath = os.path.join(path, 'backend/open_webui/routers/machines.py')
     if not os.path.exists(filepath):
         print(f"  [skip] {filepath} — file does not exist")
         return
